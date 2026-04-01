@@ -61,7 +61,8 @@ function spawnFood(id) {
     x: rand(50, WORLD_WIDTH  - 50),
     y: rand(50, WORLD_HEIGHT - 50),
     color: randomColor(),
-    value: Math.random() < 0.15 ? 3 : 1
+    value: Math.random() < 0.15 ? 3 : 1,
+    life: rand(300, 900)
   };
 }
 function initFood() { for (let i = 0; i < FOOD_COUNT; i++) spawnFood(foodId++); }
@@ -120,6 +121,29 @@ function gameTick() {
   const deaths       = [];
   const fbHits       = [];     // { fbId, targetId }
 
+  // ── Food expiration ───────────────────────────────────────────
+  let foodCountCurrent = 0;
+  for (const fid in foods) {
+    foodCountCurrent++;
+    const f = foods[fid];
+    if (f.life !== undefined) {
+      f.life -= 1;
+      if (f.life <= 0) {
+        delete foods[fid];
+        deltaFood.push({ type: 'remove', id: fid });
+        foodCountCurrent--;
+      }
+    }
+  }
+
+  // Spawn new ambient food if below threshold
+  while (foodCountCurrent < FOOD_COUNT) {
+    const nid = foodId++;
+    spawnFood(nid);
+    deltaFood.push({ type: 'add', food: foods[nid] });
+    foodCountCurrent++;
+  }
+
   // ── Move players ──────────────────────────────────────────────
   for (const pid in players) {
     const p = players[pid];
@@ -143,7 +167,7 @@ function gameTick() {
       // Drop food from dead snake
       for (let k = 0; k < p.segments.length; k += 3) {
         const fid = foodId++;
-        foods[fid] = { id: fid, x: p.segments[k].x, y: p.segments[k].y, color: p.color, value: 1 };
+        foods[fid] = { id: fid, x: p.segments[k].x, y: p.segments[k].y, color: p.color, value: 1, life: rand(300, 900) };
         deltaFood.push({ type: 'add', food: foods[fid] });
       }
       continue;
@@ -157,7 +181,7 @@ function gameTick() {
       p.score   = Math.max(0, p.score - 0.3);
       if (Math.random() < 0.3) {
         const fid = foodId++;
-        foods[fid] = { id: fid, x: p.segments[p.segments.length-1].x, y: p.segments[p.segments.length-1].y, color: p.color, value: 1 };
+        foods[fid] = { id: fid, x: p.segments[p.segments.length-1].x, y: p.segments[p.segments.length-1].y, color: p.color, value: 1, life: rand(300, 900) };
         deltaFood.push({ type: 'add', food: foods[fid] });
       }
     }
@@ -185,9 +209,6 @@ function gameTick() {
         if (p.ammo < p.maxAmmo) p.ammo = Math.min(p.maxAmmo, p.ammo + AMMO_PER_FOOD);
         delete foods[fid];
         deltaFood.push({ type: 'remove', id: fid });
-        const nid = foodId++;
-        spawnFood(nid);
-        deltaFood.push({ type: 'add', food: foods[nid] });
       }
     }
   }
@@ -229,7 +250,7 @@ function gameTick() {
               const idx = target.segments.length - 1 - k;
               if (idx < 0) break;
               const fid = foodId++;
-              foods[fid] = { id: fid, x: target.segments[idx].x, y: target.segments[idx].y, color: target.color, value: 1 };
+              foods[fid] = { id: fid, x: target.segments[idx].x, y: target.segments[idx].y, color: target.color, value: 1, life: rand(300, 900) };
               deltaFood.push({ type: 'add', food: foods[fid] });
             }
             // Give shooter some score
@@ -265,7 +286,7 @@ function gameTick() {
           deaths.push({ id: pa.id, killedBy: pb.id });
           for (let k = 0; k < pa.segments.length; k += 3) {
             const fid = foodId++;
-            foods[fid] = { id: fid, x: pa.segments[k].x, y: pa.segments[k].y, color: pa.color, value: 1 };
+            foods[fid] = { id: fid, x: pa.segments[k].x, y: pa.segments[k].y, color: pa.color, value: 1, life: rand(300, 900) };
             deltaFood.push({ type: 'add', food: foods[fid] });
           }
           break;
@@ -312,7 +333,7 @@ function gameTick() {
               const idx = target.segments.length - 1 - k;
               if (idx < 0) break;
               const fid = foodId++;
-              foods[fid] = { id: fid, x: target.segments[idx].x, y: target.segments[idx].y, color: target.color, value: 1 };
+              foods[fid] = { id: fid, x: target.segments[idx].x, y: target.segments[idx].y, color: target.color, value: 1, life: rand(300, 900) };
               deltaFood.push({ type: 'add', food: foods[fid] });
             }
           }
