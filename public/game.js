@@ -28,6 +28,7 @@ let greenApples = [];     // incoming list of green apples
 let portals     = [];     // incoming list of portals
 let puddles     = [];     // incoming list of puddles
 let larvas      = [];     // incoming list of larvae
+let slugs       = [];     // incoming list of slugs
 let hitEffects  = [];     // visual-only explosion particles
 let worldW      = 3000;
 let worldH      = 3000;
@@ -280,6 +281,7 @@ socket.on('init', data => {
   portals=data.portals||[];
   puddles=data.puddles||[];
   larvas=data.larvas||[];
+  slugs=data.slugs||[];
   requestAnimationFrame(loop);
 });
 
@@ -314,6 +316,7 @@ socket.on('tick', data => {
   portals=data.portals||[];
   puddles=data.puddles||[];
   larvas=data.larvas||[];
+  slugs=data.slugs||[];
   leaderboard=data.leaderboard;
   updateAmmoBar();
   updateMineBar();
@@ -643,6 +646,49 @@ function drawLarva(L) {
   ctx.restore();
 }
 
+function drawSlug(S) {
+  if (!isVisible(S.x, S.y, 30)) return;
+  const {x, y} = worldToScreen(S.x, S.y);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(S.angle);
+  ctx.scale(2, 2);
+  const t = Date.now() * 0.004;
+
+  // Slime trail glow
+  ctx.shadowBlur = 8; ctx.shadowColor = '#76ff03';
+
+  // Body
+  ctx.fillStyle = '#558b2f';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 14, 9, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Shell
+  ctx.fillStyle = '#8d6e63';
+  ctx.beginPath();
+  ctx.ellipse(-2, -1, 8, 7, Math.PI / 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#5d4037'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(-2, -1, 6, Math.PI * 0.3, Math.PI * 1.8); ctx.stroke();
+
+  // Head
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#7cb342';
+  ctx.beginPath(); ctx.ellipse(14, 0, 7, 6, 0, 0, Math.PI * 2); ctx.fill();
+
+  // Eyes on stalks
+  const eyeWave = Math.sin(t) * 1.5;
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(18, -4 + eyeWave, 2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(18, 4 - eyeWave, 2, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#7cb342'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(16, -2); ctx.lineTo(18, -4 + eyeWave); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(16, 2); ctx.lineTo(18, 4 - eyeWave); ctx.stroke();
+
+  ctx.restore();
+}
+
 // ── Fireball drawing ──────────────────────────────────────────────
 function drawFireball(fb) {
   if (!isVisible(fb.x, fb.y, 30)) return;
@@ -908,6 +954,9 @@ function loop() {
 
   // Larvae
   for (const L of larvas) drawLarva(L);
+
+  // Slugs
+  for (const S of slugs) drawSlug(S);
 
   // Snakes
   for (const pid in players) { if (pid!==myId) drawSnake(players[pid]); }

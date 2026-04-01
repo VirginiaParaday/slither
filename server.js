@@ -49,6 +49,13 @@ const LARVA_RADIUS = 10;
 const LARVA_SPEED = 1.2;
 const LARVA_VALUE = 5;
 
+// Slug constants
+const SLUG_COUNT = 8;
+const SLUG_RADIUS = 14;
+const SLUG_SPEED = 0.7;
+const SLUG_DAMAGE = 15;
+const SLUG_HIT_COOLDOWN = 90; // ticks between hits (~3 sec)
+
 // Fireball constants
 const FIREBALL_SPEED = 9;      // px/tick
 const FIREBALL_RADIUS = 10;
@@ -73,6 +80,7 @@ const greenApples = {}; // { [id]: GreenApple }
 const portals = {}; // { [id]: Portal }
 const puddles = {}; // { [id]: Puddle }
 const larvas = {};  // { [id]: Larva }
+const slugs  = {};  // { [id]: Slug }
 let foodId = 0;
 let fireballId = 0;
 let mineId = 0;
@@ -81,6 +89,7 @@ let greenAppleId = 0;
 let portalId = 0;
 let puddleId = 0;
 let larvaId = 0;
+let slugId = 0;
 
 // ── Helpers ──────────────────────────────────────────────────────
 const rand = (min, max) => Math.random() * (max - min) + min;
@@ -148,6 +157,15 @@ function spawnLarva() {
     angle: rand(0, Math.PI * 2)
   };
 }
+function spawnSlug() {
+  const id = slugId++;
+  slugs[id] = {
+    id,
+    x: rand(150, WORLD_WIDTH - 150),
+    y: rand(150, WORLD_HEIGHT - 150),
+    angle: rand(0, Math.PI * 2)
+  };
+}
 function initFood() {
   for (let i = 0; i < FOOD_COUNT; i++) spawnFood(foodId++);
   for (let i = 0; i < APPLE_COUNT; i++) spawnApple();
@@ -155,6 +173,7 @@ function initFood() {
   for (let i = 0; i < PORTAL_COUNT; i++) spawnPortal();
   for (let i = 0; i < PUDDLE_COUNT; i++) spawnPuddle();
   for (let i = 0; i < LARVA_COUNT; i++) spawnLarva();
+  for (let i = 0; i < SLUG_COUNT; i++) spawnSlug();
 }
 
 function createPlayer(id, name, color, pattern) {
@@ -362,6 +381,24 @@ function gameTick() {
     larvaCountCurrent++;
   }
 
+  // ── Slug Movement ──────────────────────────────────────────────
+  let slugCountCurrent = 0;
+  for (const sid in slugs) {
+    slugCountCurrent++;
+    const S = slugs[sid];
+    if (Math.random() < 0.03) S.angle += rand(-0.3, 0.3);
+    S.x += Math.cos(S.angle) * SLUG_SPEED;
+    S.y += Math.sin(S.angle) * SLUG_SPEED;
+    if (S.x < SLUG_RADIUS) { S.x = SLUG_RADIUS; S.angle = Math.PI - S.angle; }
+    else if (S.x > WORLD_WIDTH - SLUG_RADIUS) { S.x = WORLD_WIDTH - SLUG_RADIUS; S.angle = Math.PI - S.angle; }
+    if (S.y < SLUG_RADIUS) { S.y = SLUG_RADIUS; S.angle = -S.angle; }
+    else if (S.y > WORLD_HEIGHT - SLUG_RADIUS) { S.y = WORLD_HEIGHT - SLUG_RADIUS; S.angle = -S.angle; }
+  }
+  while (slugCountCurrent < SLUG_COUNT) {
+    spawnSlug();
+    slugCountCurrent++;
+  }
+
   // ── Move players ──────────────────────────────────────────────
   for (const pid in players) {
     const p = players[pid];
@@ -507,6 +544,34 @@ function gameTick() {
         p.score += LARVA_VALUE;
         p.length += LARVA_VALUE * 2;
         delete larvas[lid];
+      }
+    }
+    
+    // Slug damage (any body segment touching slug)
+    if (!p.isNpc) {
+      for (const sid in slugs) {
+        const S = slugs[sid];
+        S._hitCooldown = S._hitCooldown || {};
+        const cooldown = S._hitCooldown[p.id] || 0;
+        if (cooldown > 0) { S._hitCooldown[p.id]--; continue; }
+        for (let s = 0; s < p.segments.length; s++) {
+          if (circlesOverlap(p.segments[s].x, p.segments[s].y, SNAKE_RADIUS + 2, S.x, S.y, SLUG_RADIUS)) {
+            const dmg = Math.min(SLUG_DAMAGE, p.length - 4);
+            if (dmg > 0) {
+              p.length = Math.max(4, p.length - dmg);
+              p.score = Math.max(0, p.score - dmg * 0.5);
+              for (let k = 0; k < dmg * 2; k++) {
+                const idx = p.segments.length - 1 - k;
+                if (idx < 0) break;
+                const fid = foodId++;
+                foods[fid] = { id: fid, x: p.segments[idx].x, y: p.segments[idx].y, color: p.color, value: 1, life: rand(300, 600) };
+                deltaFood.push({ type: 'add', food: foods[fid] });
+              }
+            }
+            S._hitCooldown[p.id] = SLUG_HIT_COOLDOWN;
+            break;
+          }
+        }
       }
     }
   }
@@ -721,7 +786,7 @@ function gameTick() {
     .sort((a, b) => b.score - a.score).slice(0, 10)
     .map(p => ({ id: p.id, name: p.name, score: Math.floor(p.score), color: p.color, alive: p.alive }));
 
-  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits, apples: Object.values(apples), shieldHits, greenApples: Object.values(greenApples), portals: Object.values(portals), puddles: Object.values(puddles), larvas: Object.values(larvas) });
+  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits, apples: Object.values(apples), shieldHits, greenApples: Object.values(greenApples), portals: Object.values(portals), puddles: Object.values(puddles), larvas: Object.values(larvas), slugs: Object.values(slugs) });
 
   for (const d of deaths) io.to(d.id).emit('died', { killedBy: d.killedBy });
 }
@@ -743,6 +808,7 @@ io.on('connection', socket => {
       portals: Object.values(portals),
       puddles: Object.values(puddles),
       larvas: Object.values(larvas),
+      slugs: Object.values(slugs),
       worldWidth: WORLD_WIDTH,
       worldHeight: WORLD_HEIGHT
     });
