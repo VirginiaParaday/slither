@@ -10,63 +10,63 @@ const io = new Server(server, { cors: { origin: '*' } });
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Constants ────────────────────────────────────────────────────
-const WORLD_WIDTH     = 3000;
-const WORLD_HEIGHT    = 3000;
-const TICK_RATE       = 1000 / 30;
-const FOOD_COUNT      = 400;
+const WORLD_WIDTH = 3000;
+const WORLD_HEIGHT = 3000;
+const TICK_RATE = 1000 / 30;
+const FOOD_COUNT = 400;
 const SEGMENT_SPACING = 8;
-const SNAKE_SPEED     = 3.2;
-const BOOST_SPEED     = 6.0;
-const SNAKE_RADIUS    = 9;
-const FOOD_RADIUS     = 5;
-const HEAD_RADIUS     = 11;
+const SNAKE_SPEED = 3.2;
+const BOOST_SPEED = 6.0;
+const SNAKE_RADIUS = 9;
+const FOOD_RADIUS = 5;
+const HEAD_RADIUS = 11;
 
 // Apple constants
-const APPLE_COUNT       = 4;
-const APPLE_RADIUS      = 9;
-const APPLE_LIFETIME    = 300;    // 10s at 30fps
-const PROTECTION_TIME   = 150;    // 5s at 30fps
+const APPLE_COUNT = 4;
+const APPLE_RADIUS = 9;
+const APPLE_LIFETIME = 600;    // 10s at 30fps
+const PROTECTION_TIME = 250;    // 5s at 30fps
 
 // Fireball constants
-const FIREBALL_SPEED    = 9;      // px/tick
-const FIREBALL_RADIUS   = 10;
+const FIREBALL_SPEED = 9;      // px/tick
+const FIREBALL_RADIUS = 10;
 const FIREBALL_LIFETIME = 90;     // ticks (~3 seconds at 30fps)
-const FIREBALL_DAMAGE   = 8;      // segments removed on hit
-const MAX_AMMO          = 5;
-const AMMO_PER_FOOD     = 1;      // ammo recharged per food eaten
+const FIREBALL_DAMAGE = 8;      // segments removed on hit
+const MAX_AMMO = 5;
+const AMMO_PER_FOOD = 1;      // ammo recharged per food eaten
 
 // Mine constants
-const MINE_RADIUS       = 12;
-const MINE_LIFETIME     = 120;    // ticks (~4 seconds at 30fps)
-const MINE_DAMAGE       = 10;     // segments removed on hit
-const MAX_MINES         = 3;      // max mines a player can have active
+const MINE_RADIUS = 12;
+const MINE_LIFETIME = 120;    // ticks (~4 seconds at 30fps)
+const MINE_DAMAGE = 10;     // segments removed on hit
+const MAX_MINES = 3;      // max mines a player can have active
 
 // ── State ────────────────────────────────────────────────────────
-const players   = {};
-const foods     = {};
+const players = {};
+const foods = {};
 const fireballs = {};   // { [id]: Fireball }
-const mines     = {};   // { [id]: Mine }
-const apples    = {};   // { [id]: Apple }
-let foodId      = 0;
-let fireballId  = 0;
-let mineId      = 0;
-let appleId     = 0;
+const mines = {};   // { [id]: Mine }
+const apples = {};   // { [id]: Apple }
+let foodId = 0;
+let fireballId = 0;
+let mineId = 0;
+let appleId = 0;
 
 // ── Helpers ──────────────────────────────────────────────────────
 const rand = (min, max) => Math.random() * (max - min) + min;
 
 const COLORS = [
-  '#FF6B6B','#FF9F43','#FECA57','#48DBFB','#FF9FF3',
-  '#54A0FF','#5F27CD','#00D2D3','#1DD1A1','#C44569',
-  '#F8B739','#EE5A24','#009432','#0652DD','#9980FA',
-  '#ED4C67','#F79F1F','#A3CB38','#1289A7','#C4E538'
+  '#FF6B6B', '#FF9F43', '#FECA57', '#48DBFB', '#FF9FF3',
+  '#54A0FF', '#5F27CD', '#00D2D3', '#1DD1A1', '#C44569',
+  '#F8B739', '#EE5A24', '#009432', '#0652DD', '#9980FA',
+  '#ED4C67', '#F79F1F', '#A3CB38', '#1289A7', '#C4E538'
 ];
 function randomColor() { return COLORS[Math.floor(Math.random() * COLORS.length)]; }
 
 function spawnFood(id) {
   foods[id] = {
     id,
-    x: rand(50, WORLD_WIDTH  - 50),
+    x: rand(50, WORLD_WIDTH - 50),
     y: rand(50, WORLD_HEIGHT - 50),
     color: randomColor(),
     value: Math.random() < 0.15 ? 3 : 1,
@@ -77,46 +77,46 @@ function spawnApple() {
   const id = appleId++;
   apples[id] = {
     id,
-    x: rand(50, WORLD_WIDTH  - 50),
+    x: rand(50, WORLD_WIDTH - 50),
     y: rand(50, WORLD_HEIGHT - 50),
     life: APPLE_LIFETIME
   };
 }
-function initFood() { 
-  for (let i = 0; i < FOOD_COUNT; i++) spawnFood(foodId++); 
+function initFood() {
+  for (let i = 0; i < FOOD_COUNT; i++) spawnFood(foodId++);
   for (let i = 0; i < APPLE_COUNT; i++) spawnApple();
 }
 
 function createPlayer(id, name, color, pattern) {
-  const startX = rand(300, WORLD_WIDTH  - 300);
+  const startX = rand(300, WORLD_WIDTH - 300);
   const startY = rand(300, WORLD_HEIGHT - 300);
   const segments = [];
   for (let i = 0; i < 10; i++) segments.push({ x: startX, y: startY + i * SEGMENT_SPACING });
   return {
     id,
-    name:        name.slice(0, 20) || 'Snake',
-    color:       color   || randomColor(),
-    pattern:     pattern || 'solid',
+    name: name.slice(0, 20) || 'Snake',
+    color: color || randomColor(),
+    pattern: pattern || 'solid',
     segments,
-    angle:       -Math.PI / 2,
+    angle: -Math.PI / 2,
     targetAngle: -Math.PI / 2,
-    score:       0,
-    boosting:    false,
-    alive:       true,
-    length:      10,
-    ammo:        MAX_AMMO,      // current fireball charges
-    maxAmmo:     MAX_AMMO,
-    mines:       MAX_MINES,
-    maxMines:    MAX_MINES,
-    mineCount:   0,             // active mines placed by this player
-    protection:  0              // shield ticks remaining
+    score: 0,
+    boosting: false,
+    alive: true,
+    length: 10,
+    ammo: MAX_AMMO,      // current fireball charges
+    maxAmmo: MAX_AMMO,
+    mines: MAX_MINES,
+    maxMines: MAX_MINES,
+    mineCount: 0,             // active mines placed by this player
+    protection: 0              // shield ticks remaining
   };
 }
 
 function placeMine(playerId) {
   const p = players[playerId];
   if (!p || !p.alive || p.mineCount >= MAX_MINES) return null;
-  
+
   const tail = p.segments[p.segments.length - 1];
   const mid = mineId++;
   mines[mid] = {
@@ -137,11 +137,11 @@ function circlesOverlap(ax, ay, ar, bx, by, br) {
 
 // ── Game tick ────────────────────────────────────────────────────
 function gameTick() {
-  const deltaFood    = [];
+  const deltaFood = [];
   const deltaPlayers = {};
-  const deaths       = [];
-  const fbHits       = [];     // { fbId, targetId }
-  const shieldHits   = [];     // { x, y }
+  const deaths = [];
+  const fbHits = [];     // { fbId, targetId }
+  const shieldHits = [];     // { x, y }
 
   // ── Apple expiration ──────────────────────────────────────────
   let appleCountCurrent = 0;
@@ -187,18 +187,18 @@ function gameTick() {
     if (!p.alive) continue;
 
     let diff = p.targetAngle - p.angle;
-    while (diff >  Math.PI) diff -= 2 * Math.PI;
+    while (diff > Math.PI) diff -= 2 * Math.PI;
     while (diff < -Math.PI) diff += 2 * Math.PI;
     p.angle += Math.sign(diff) * Math.min(Math.abs(diff), 0.10);
 
     const speed = (p.boosting && p.length > 10) ? BOOST_SPEED : SNAKE_SPEED;
-    const head  = p.segments[0];
+    const head = p.segments[0];
     let nx = head.x + Math.cos(p.angle) * speed;
     let ny = head.y + Math.sin(p.angle) * speed;
 
     // Check if snake touches the borders - if so, it dies
     if (nx < HEAD_RADIUS || nx > WORLD_WIDTH - HEAD_RADIUS ||
-        ny < HEAD_RADIUS || ny > WORLD_HEIGHT - HEAD_RADIUS) {
+      ny < HEAD_RADIUS || ny > WORLD_HEIGHT - HEAD_RADIUS) {
       p.alive = false;
       deaths.push({ id: p.id, killedBy: null });
       // Drop food from dead snake
@@ -217,10 +217,10 @@ function gameTick() {
 
     if (p.boosting && p.length > 10) {
       p.length -= 0.3;
-      p.score   = Math.max(0, p.score - 0.3);
+      p.score = Math.max(0, p.score - 0.3);
       if (Math.random() < 0.3) {
         const fid = foodId++;
-        foods[fid] = { id: fid, x: p.segments[p.segments.length-1].x, y: p.segments[p.segments.length-1].y, color: p.color, value: 1, life: rand(300, 900) };
+        foods[fid] = { id: fid, x: p.segments[p.segments.length - 1].x, y: p.segments[p.segments.length - 1].y, color: p.color, value: 1, life: rand(300, 900) };
         deltaFood.push({ type: 'add', food: foods[fid] });
       }
     }
@@ -243,7 +243,7 @@ function gameTick() {
     for (const fid in foods) {
       const f = foods[fid];
       if (circlesOverlap(head.x, head.y, HEAD_RADIUS, f.x, f.y, FOOD_RADIUS)) {
-        p.score  += f.value;
+        p.score += f.value;
         p.length += f.value * 2;
         // Recharge ammo on eat
         if (p.ammo < p.maxAmmo) p.ammo = Math.min(p.maxAmmo, p.ammo + AMMO_PER_FOOD);
@@ -273,8 +273,8 @@ function gameTick() {
 
   for (const fbid in fireballs) {
     const fb = fireballs[fbid];
-    fb.x    += Math.cos(fb.angle) * FIREBALL_SPEED;
-    fb.y    += Math.sin(fb.angle) * FIREBALL_SPEED;
+    fb.x += Math.cos(fb.angle) * FIREBALL_SPEED;
+    fb.y += Math.sin(fb.angle) * FIREBALL_SPEED;
     fb.life -= 1;
 
     // Out of bounds or expired
@@ -302,15 +302,15 @@ function gameTick() {
             const dmg = Math.min(FIREBALL_DAMAGE, target.length - 4);
             if (dmg > 0) {
               target.length = Math.max(4, target.length - dmg);
-              target.score  = Math.max(0, target.score - dmg * 0.5);
-            // Drop food from removed tail
-            for (let k = 0; k < dmg * 2; k++) {
-              const idx = target.segments.length - 1 - k;
-              if (idx < 0) break;
-              const fid = foodId++;
-              foods[fid] = { id: fid, x: target.segments[idx].x, y: target.segments[idx].y, color: target.color, value: 1, life: rand(300, 900) };
-              deltaFood.push({ type: 'add', food: foods[fid] });
-            }
+              target.score = Math.max(0, target.score - dmg * 0.5);
+              // Drop food from removed tail
+              for (let k = 0; k < dmg * 2; k++) {
+                const idx = target.segments.length - 1 - k;
+                if (idx < 0) break;
+                const fid = foodId++;
+                foods[fid] = { id: fid, x: target.segments[idx].x, y: target.segments[idx].y, color: target.color, value: 1, life: rand(300, 900) };
+                deltaFood.push({ type: 'add', food: foods[fid] });
+              }
               // Give shooter some score
               const shooter = players[fb.ownerId];
               if (shooter) { shooter.score += dmg * 0.5; }
@@ -340,7 +340,7 @@ function gameTick() {
       const headA = pa.segments[0];
       for (let s = 2; s < pb.segments.length; s++) {
         const seg = pb.segments[s];
-        if (circlesOverlap(headA.x, headA.y, HEAD_RADIUS-2, seg.x, seg.y, SNAKE_RADIUS)) {
+        if (circlesOverlap(headA.x, headA.y, HEAD_RADIUS - 2, seg.x, seg.y, SNAKE_RADIUS)) {
           pa.alive = false;
           deaths.push({ id: pa.id, killedBy: pb.id });
           for (let k = 0; k < pa.segments.length; k += 3) {
@@ -356,7 +356,7 @@ function gameTick() {
 
   // ── Mine collisions ───────────────────────────────────────────
   const mineDelta = [];   // changes to broadcast
-  const mineHits  = [];   // { mineId, targetId }
+  const mineHits = [];   // { mineId, targetId }
 
   for (const mid in mines) {
     const m = mines[mid];
@@ -389,12 +389,12 @@ function gameTick() {
             const dmg = Math.min(MINE_DAMAGE, target.length - 4);
             if (dmg > 0) {
               target.length = Math.max(4, target.length - dmg);
-              target.score  = Math.max(0, target.score - dmg * 0.5);
-            // Drop food from removed tail
-            for (let k = 0; k < dmg * 2; k++) {
-              const idx = target.segments.length - 1 - k;
-              if (idx < 0) break;
-              const fid = foodId++;
+              target.score = Math.max(0, target.score - dmg * 0.5);
+              // Drop food from removed tail
+              for (let k = 0; k < dmg * 2; k++) {
+                const idx = target.segments.length - 1 - k;
+                if (idx < 0) break;
+                const fid = foodId++;
                 foods[fid] = { id: fid, x: target.segments[idx].x, y: target.segments[idx].y, color: target.color, value: 1, life: rand(300, 900) };
                 deltaFood.push({ type: 'add', food: foods[fid] });
               }
@@ -419,8 +419,8 @@ function gameTick() {
 
   // ── Leaderboard ───────────────────────────────────────────────
   const leaderboard = Object.values(players)
-    .sort((a,b) => b.score - a.score).slice(0,10)
-    .map(p => ({ id:p.id, name:p.name, score:Math.floor(p.score), color:p.color, alive:p.alive }));
+    .sort((a, b) => b.score - a.score).slice(0, 10)
+    .map(p => ({ id: p.id, name: p.name, score: Math.floor(p.score), color: p.color, alive: p.alive }));
 
   io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits, apples: Object.values(apples), shieldHits });
 
@@ -435,12 +435,12 @@ io.on('connection', socket => {
     players[socket.id] = createPlayer(socket.id, name, color, pattern);
     socket.emit('init', {
       id: socket.id,
-      foods:      Object.values(foods),
-      players:    Object.values(players),
-      fireballs:  Object.values(fireballs),
-      mines:      Object.values(mines),
-      apples:     Object.values(apples),
-      worldWidth:  WORLD_WIDTH,
+      foods: Object.values(foods),
+      players: Object.values(players),
+      fireballs: Object.values(fireballs),
+      mines: Object.values(mines),
+      apples: Object.values(apples),
+      worldWidth: WORLD_WIDTH,
       worldHeight: WORLD_HEIGHT
     });
     io.emit('playerJoined', { id: socket.id, name: players[socket.id].name });
@@ -449,8 +449,8 @@ io.on('connection', socket => {
   socket.on('input', ({ angle, boosting }) => {
     const p = players[socket.id];
     if (!p || !p.alive) return;
-    if (typeof angle    === 'number')  p.targetAngle = angle;
-    if (typeof boosting === 'boolean') p.boosting    = boosting;
+    if (typeof angle === 'number') p.targetAngle = angle;
+    if (typeof boosting === 'boolean') p.boosting = boosting;
   });
 
   socket.on('fireball', () => {
@@ -460,13 +460,13 @@ io.on('connection', socket => {
     const head = p.segments[0];
     const fbid = fireballId++;
     fireballs[fbid] = {
-      id:      fbid,
+      id: fbid,
       ownerId: socket.id,
-      color:   p.color,
-      x:       head.x + Math.cos(p.angle) * (HEAD_RADIUS + FIREBALL_RADIUS + 2),
-      y:       head.y + Math.sin(p.angle) * (HEAD_RADIUS + FIREBALL_RADIUS + 2),
-      angle:   p.angle,
-      life:    FIREBALL_LIFETIME
+      color: p.color,
+      x: head.x + Math.cos(p.angle) * (HEAD_RADIUS + FIREBALL_RADIUS + 2),
+      y: head.y + Math.sin(p.angle) * (HEAD_RADIUS + FIREBALL_RADIUS + 2),
+      angle: p.angle,
+      life: FIREBALL_LIFETIME
     };
     // Broadcast new fireball to all
     io.emit('fireballSpawned', fireballs[fbid]);
@@ -485,7 +485,7 @@ io.on('connection', socket => {
   socket.on('respawn', ({ color, pattern } = {}) => {
     const p = players[socket.id];
     if (!p) return;
-    players[socket.id] = createPlayer(socket.id, p.name, color||p.color, pattern||p.pattern);
+    players[socket.id] = createPlayer(socket.id, p.name, color || p.color, pattern || p.pattern);
     socket.emit('respawned', { player: players[socket.id] });
   });
 
