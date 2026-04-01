@@ -396,6 +396,38 @@
         box-shadow: 0 2px 15px rgba(255, 107, 0, 0.6);
       }
 
+      /* Mine button for mobile */
+      .mine-button {
+        position: absolute;
+        bottom: 24px;
+        left: 110px;
+        width: 70px;
+        height: 70px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #8b0000, #ff4444);
+        border: 3px solid #ff6666;
+        color: #fff;
+        font-size: 1.8rem;
+        cursor: pointer;
+        pointer-events: all;
+        box-shadow: 0 4px 20px rgba(139, 0, 0, 0.6);
+        transition:
+          transform 0.15s,
+          box-shadow 0.15s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+      }
+      .mine-button:hover {
+        transform: scale(1.1);
+        box-shadow: 0 6px 25px rgba(139, 0, 0, 0.8);
+      }
+      .mine-button:active {
+        transform: scale(0.95);
+        box-shadow: 0 2px 15px rgba(139, 0, 0, 0.6);
+      }
+
       /* ── SKIN PICKER ── */
       .skin-section {
         margin: 1.2rem 0;
@@ -585,10 +617,11 @@
         <div class="ammo-label">🔥 Fuego <span id="ammoCount">5/5</span></div>
         <div class="ammo-orbs" id="ammoOrbs"></div>
         <div class="hints-row">
-          Espacio = disparo &nbsp;|&nbsp; Click = turbo
+          Espacio = disparo &nbsp;|&nbsp; Q = mina &nbsp;|&nbsp; Click = turbo
         </div>
       </div>
       <button id="fireBtn" class="fire-button">🔥</button>
+      <button id="mineBtn" class="mine-button">💣</button>
     </div>
 
     <!-- DEATH -->

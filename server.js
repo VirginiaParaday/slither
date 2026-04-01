@@ -29,12 +29,20 @@ const FIREBALL_DAMAGE   = 8;      // segments removed on hit
 const MAX_AMMO          = 5;
 const AMMO_PER_FOOD     = 1;      // ammo recharged per food eaten
 
+// Mine constants
+const MINE_RADIUS       = 12;
+const MINE_LIFETIME     = 120;    // ticks (~4 seconds at 30fps)
+const MINE_DAMAGE       = 10;     // segments removed on hit
+const MAX_MINES         = 3;      // max mines a player can have active
+
 // ── State ────────────────────────────────────────────────────────
 const players   = {};
 const foods     = {};
 const fireballs = {};   // { [id]: Fireball }
+const mines     = {};   // { [id]: Mine }
 let foodId      = 0;
 let fireballId  = 0;
+let mineId      = 0;
 
 // ── Helpers ──────────────────────────────────────────────────────
 const rand = (min, max) => Math.random() * (max - min) + min;
@@ -76,8 +84,27 @@ function createPlayer(id, name, color, pattern) {
     alive:       true,
     length:      10,
     ammo:        MAX_AMMO,      // current fireball charges
-    maxAmmo:     MAX_AMMO
+    maxAmmo:     MAX_AMMO,
+    mineCount:   0              // active mines placed by this player
   };
+}
+
+function placeMine(playerId) {
+  const p = players[playerId];
+  if (!p || !p.alive || p.mineCount >= MAX_MINES) return null;
+  
+  const tail = p.segments[p.segments.length - 1];
+  const mid = mineId++;
+  mines[mid] = {
+    id: mid,
+    ownerId: playerId,
+    x: tail.x,
+    y: tail.y,
+    color: p.color,
+    life: MINE_LIFETIME
+  };
+  p.mineCount++;
+  return mines[mid];
 }
 
 function circlesOverlap(ax, ay, ar, bx, by, br) {
@@ -244,12 +271,71 @@ function gameTick() {
     }
   }
 
+  // ── Mine collisions ───────────────────────────────────────────
+  const mineDelta = [];   // changes to broadcast
+  const mineHits  = [];   // { mineId, targetId }
+
+  for (const mid in mines) {
+    const m = mines[mid];
+    m.life -= 1;
+
+    // Expired
+    if (m.life <= 0) {
+      delete mines[mid];
+      const owner = players[m.ownerId];
+      if (owner) owner.mineCount--;
+      mineDelta.push({ type: 'remove', id: mid });
+      continue;
+    }
+
+    // Check hit vs all players
+    let hit = false;
+    for (const pid in players) {
+      if (pid === m.ownerId) continue; // owner's mines don't hurt owner
+      const target = players[pid];
+      if (!target.alive || !target.segments?.length) continue;
+
+      // Check vs every segment
+      for (let s = 0; s < target.segments.length; s++) {
+        const seg = target.segments[s];
+        if (circlesOverlap(m.x, m.y, MINE_RADIUS, seg.x, seg.y, SNAKE_RADIUS + 2)) {
+          // Hit! shrink target
+          const dmg = Math.min(MINE_DAMAGE, target.length - 4);
+          if (dmg > 0) {
+            target.length = Math.max(4, target.length - dmg);
+            target.score  = Math.max(0, target.score - dmg * 0.5);
+            // Drop food from removed tail
+            for (let k = 0; k < dmg * 2; k++) {
+              const idx = target.segments.length - 1 - k;
+              if (idx < 0) break;
+              const fid = foodId++;
+              foods[fid] = { id: fid, x: target.segments[idx].x, y: target.segments[idx].y, color: target.color, value: 1 };
+              deltaFood.push({ type: 'add', food: foods[fid] });
+            }
+          }
+          mineHits.push({ mineId: mid, targetId: pid, x: m.x, y: m.y });
+          delete mines[mid];
+          const owner = players[m.ownerId];
+          if (owner) owner.mineCount--;
+          mineDelta.push({ type: 'remove', id: mid });
+          hit = true;
+          break;
+        }
+      }
+      if (hit) break;
+    }
+
+    if (!hit && mines[mid]) {
+      mineDelta.push({ type: 'update', mine: { id: m.id, x: m.x, y: m.y, life: m.life, color: m.color, ownerId: m.ownerId } });
+    }
+  }
+
   // ── Leaderboard ───────────────────────────────────────────────
   const leaderboard = Object.values(players)
     .sort((a,b) => b.score - a.score).slice(0,10)
     .map(p => ({ id:p.id, name:p.name, score:Math.floor(p.score), color:p.color, alive:p.alive }));
 
-  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits });
+  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits });
 
   for (const d of deaths) io.to(d.id).emit('died', { killedBy: d.killedBy });
 }
@@ -265,6 +351,7 @@ io.on('connection', socket => {
       foods:      Object.values(foods),
       players:    Object.values(players),
       fireballs:  Object.values(fireballs),
+      mines:      Object.values(mines),
       worldWidth:  WORLD_WIDTH,
       worldHeight: WORLD_HEIGHT
     });
@@ -295,6 +382,16 @@ io.on('connection', socket => {
     };
     // Broadcast new fireball to all
     io.emit('fireballSpawned', fireballs[fbid]);
+  });
+
+  socket.on('mine', () => {
+    const p = players[socket.id];
+    if (!p || !p.alive || p.mineCount >= MAX_MINES) return;
+    const mine = placeMine(socket.id);
+    if (mine) {
+      // Broadcast new mine to all
+      io.emit('mineSpawned', mine);
+    }
   });
 
   socket.on('respawn', ({ color, pattern } = {}) => {

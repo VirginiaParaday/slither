@@ -20,6 +20,7 @@ let myId        = null;
 let players     = {};
 let foods       = {};
 let fireballs   = {};     // { [id]: {id,x,y,angle,life,color,ownerId} }
+let mines       = {};     // { [id]: {id,x,y,life,color,ownerId} }
 let hitEffects  = [];     // visual-only explosion particles
 let worldW      = 3000;
 let worldH      = 3000;
@@ -188,6 +189,10 @@ window.addEventListener('keydown', e => {
     e.preventDefault();
     shootFireball();
   }
+  if (e.key === 'q' || e.key === 'Q') {
+    e.preventDefault();
+    placeMine();
+  }
 });
 window.addEventListener('keyup', e => { keys[e.key]=false; });
 
@@ -201,6 +206,19 @@ if (fireBtn) {
   fireBtn.addEventListener('mousedown', e => {
     e.preventDefault();
     shootFireball();
+  });
+}
+
+// Mine button for mobile
+const mineBtn = document.getElementById('mineBtn');
+if (mineBtn) {
+  mineBtn.addEventListener('touchstart', e => {
+    e.preventDefault();
+    placeMine();
+  });
+  mineBtn.addEventListener('mousedown', e => {
+    e.preventDefault();
+    placeMine();
   });
 }
 
@@ -219,6 +237,13 @@ function shootFireball() {
   }
 }
 
+// ── Mine placement ─────────────────────────────────────────────
+function placeMine() {
+  const me = players[myId];
+  if (!me || !me.alive) return;
+  socket.emit('mine');
+}
+
 // ── Lobby ─────────────────────────────────────────────────────────
 document.getElementById('playBtn').addEventListener('click', joinGame);
 document.getElementById('nickname').addEventListener('keydown', e => { if (e.key==='Enter') joinGame(); });
@@ -234,6 +259,7 @@ socket.on('init', data => {
   foods={}; data.foods.forEach(f => { foods[f.id]=f; });
   players={}; data.players.forEach(p => { players[p.id]=p; });
   fireballs={}; (data.fireballs||[]).forEach(fb => { fireballs[fb.id]=fb; });
+  mines={}; (data.mines||[]).forEach(m => { mines[m.id]=m; });
   requestAnimationFrame(loop);
 });
 
@@ -248,15 +274,25 @@ socket.on('tick', data => {
     if (fd.type==='update') fireballs[fd.fb.id]=fd.fb;
     if (fd.type==='remove') delete fireballs[fd.id];
   }
+  // Apply mine delta
+  for (const md of (data.mineDelta||[])) {
+    if (md.type==='update') mines[md.mine.id]=md.mine;
+    if (md.type==='remove') delete mines[md.id];
+  }
   // Spawn hit effects
   for (const hit of (data.fbHits||[])) {
     spawnExplosion(hit.x, hit.y, players[hit.targetId]?.color || '#ff6b00');
+  }
+  // Spawn mine hit effects
+  for (const hit of (data.mineHits||[])) {
+    spawnExplosion(hit.x, hit.y, '#ff0000');
   }
   leaderboard=data.leaderboard;
   updateAmmoBar();
 });
 
 socket.on('fireballSpawned', fb => { fireballs[fb.id]=fb; });
+socket.on('mineSpawned', m => { mines[m.id]=m; });
 socket.on('playerLeft', ({ id }) => { delete players[id]; });
 socket.on('died', ({ killedBy }) => {
   const killer=players[killedBy];
@@ -455,6 +491,43 @@ function drawFireball(fb) {
   ctx.restore();
 }
 
+// ── Mine drawing ──────────────────────────────────────────────
+function drawMine(m) {
+  if (!isVisible(m.x, m.y, 30)) return;
+  const {x,y}=worldToScreen(m.x, m.y);
+  const age = 1 - m.life / 120;   // 0=fresh, 1=expiring
+
+  ctx.save();
+
+  // Outer glow
+  ctx.shadowBlur  = 15;
+  ctx.shadowColor = '#ff0000';
+
+  // Core gradient
+  const g = ctx.createRadialGradient(x-2, y-2, 0, x, y, 12);
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(0.3, '#ff4444');
+  g.addColorStop(0.7, '#8b0000');
+  g.addColorStop(1, 'rgba(139,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, 12, 0, Math.PI*2); ctx.fill();
+
+  // Pulsing ring
+  ctx.shadowBlur=0;
+  ctx.strokeStyle = `rgba(255,100,100,${0.6 - age*0.5})`;
+  ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(x, y, 14+Math.sin(Date.now()*0.04)*2, 0, Math.PI*2); ctx.stroke();
+
+  // Skull icon
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 10px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('☠', x, y);
+
+  ctx.restore();
+}
+
 function drawSnake(p) {
   if (!p.alive || !p.segments || p.segments.length<2) return;
   const segs=p.segments, isMe=p.id===myId;
@@ -518,6 +591,8 @@ function drawMinimap() {
   for (const pid in players){const p=players[pid];if(!p.alive||!p.segments?.length)continue;const h=p.segments[0],isMe=pid===myId;mmCtx.beginPath();mmCtx.arc(h.x*sx,h.y*sy,isMe?4:2.5,0,Math.PI*2);mmCtx.fillStyle=isMe?'#3fb950':p.color;mmCtx.fill();}
   // Fireballs on minimap
   for (const fbid in fireballs){const fb=fireballs[fbid];mmCtx.fillStyle='#ff6b00';mmCtx.beginPath();mmCtx.arc(fb.x*sx,fb.y*sy,2.5,0,Math.PI*2);mmCtx.fill();}
+  // Mines on minimap
+  for (const mid in mines){const m=mines[mid];mmCtx.fillStyle='#ff0000';mmCtx.beginPath();mmCtx.arc(m.x*sx,m.y*sy,3,0,Math.PI*2);mmCtx.fill();}
   mmCtx.strokeStyle='rgba(255,255,255,.3)';mmCtx.lineWidth=1;
   mmCtx.strokeRect((cameraX-canvas.width/2)*sx,(cameraY-canvas.height/2)*sy,canvas.width*sx,canvas.height*sy);
 }
@@ -556,6 +631,9 @@ function loop() {
 
   // Fireballs
   for (const fbid in fireballs) drawFireball(fireballs[fbid]);
+
+  // Mines
+  for (const mid in mines) drawMine(mines[mid]);
 
   // Explosion particles
   updateAndDrawEffects();
