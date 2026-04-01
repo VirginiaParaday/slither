@@ -280,22 +280,53 @@ function joinGame() {
 socket.on('connect', () => console.log('✅ Socket conectado:', socket.id));
 socket.on('connect_error', (err) => console.error('❌ Socket error:', err));
 
+let isInitialized = false;
 socket.on('init', data => {
+  if (isInitialized) return;
   console.log('📦 Init recibido:', data.id);
-  myId=data.id; worldW=data.worldWidth||3000; worldH=data.worldHeight||3000;
-  foods={}; data.foods.forEach(f => { foods[f.id]=f; });
-  players={}; data.players.forEach(p => { players[p.id]=p; });
-  fireballs={}; (data.fireballs||[]).forEach(fb => { fireballs[fb.id]=fb; });
-  mines={}; (data.mines||[]).forEach(m => { mines[m.id]=m; });
-  apples=data.apples||[];
-  greenApples=data.greenApples||[];
-  portals=data.portals||[];
-  puddles=data.puddles||[];
-  larvas=data.larvas||[];
-  slugs=data.slugs||[];
-  worms=data.worms||[];
-  ants=data.ants||[];
-  console.log('🎮 Entidades inicializadas:', { players: data.players.length, food: data.foods.length });
+  myId = data.id; 
+  worldW = data.worldWidth || 3000; 
+  worldH = data.worldHeight || 3000;
+  
+  // New compact food format: [id, x, y, value]
+  foods = {}; 
+  data.foods.forEach(f => { 
+    foods[f[0]] = { id: f[0], x: f[1], y: f[2], value: f[3] }; 
+  });
+
+  players = {}; 
+  data.players.forEach(p => { 
+    // Ensure segments exist (server might send head-only for others)
+    if (!p.segments && p.head) p.segments = [p.head, p.head]; 
+    players[p.id] = p; 
+  });
+
+  fireballs = {}; (data.fireballs || []).forEach(fb => { fireballs[fb.id] = fb; });
+  mines = {}; (data.mines || []).forEach(m => { mines[m.id] = m; });
+  apples = data.apples || [];
+  greenApples = data.greenApples || [];
+  portals = data.portals || [];
+  puddles = data.puddles || [];
+  larvas = data.larvas || [];
+  slugs = data.slugs || [];
+  
+  // Initialize worms with segments so they don't break drawSnake
+  worms = (data.worms || []).map(wu => {
+    if (!wu.segments && wu.head) {
+      wu.segments = [];
+      for(let i=0; i< (wu.len || 5); i++) wu.segments.push({...wu.head});
+    }
+    return wu;
+  });
+
+  ants = data.ants || [];
+  console.log('🎮 Entidades inicializadas:', { 
+    players: data.players.length, 
+    food: data.foods.length,
+    worms: worms.length 
+  });
+  
+  isInitialized = true;
   requestAnimationFrame(loop);
 });
 
@@ -362,26 +393,32 @@ socket.on('tick', data => {
   slugs  = data.slugs || [];
   worms  = data.worms || [];
   ants   = data.ants || [];
-  if (data.worms) {
-     const newWorms = [];
-     for (const wu of data.worms) {
-       let oldWorm = worms.find(w => w.id === wu.id);
-       if (!oldWorm || wu.segs) {
-         newWorms.push(wu);
-       } else {
-         const segs = oldWorm.segs || [];
-         if (segs.length === 0 || (wu.head && (segs[0].x !== wu.head.x || segs[0].y !== wu.head.y))) {
-           segs.unshift(wu.head);
-           while (segs.length > (wu.len || 1)) segs.pop();
-         }
-         oldWorm.segs = segs;
-         oldWorm.angle = wu.angle;
-         newWorms.push(oldWorm);
-       }
-     }
-     worms = newWorms;
-  }
-  ants = data.ants || [];
+    if (data.worms) {
+      const newWorms = [];
+      for (const wu of data.worms) {
+        let oldWorm = worms.find(w => w.id === wu.id);
+        if (!oldWorm) {
+          // New worm, initialize segments
+          if (!wu.segments && wu.head) wu.segments = [wu.head, wu.head];
+          newWorms.push(wu);
+        } else {
+          const segs = oldWorm.segments || oldWorm.segs || [];
+          if (wu.segments) {
+            oldWorm.segments = wu.segments;
+          } else if (wu.head) {
+            // Reconstruct body from head
+            if (segs.length === 0 || (segs[0].x !== wu.head.x || segs[0].y !== wu.head.y)) {
+              segs.unshift(wu.head);
+              while (segs.length > (wu.len || 1)) segs.pop();
+            }
+            oldWorm.segments = segs;
+          }
+          oldWorm.angle = wu.angle;
+          newWorms.push(oldWorm);
+        }
+      }
+      worms = newWorms;
+    }
     leaderboard = data.leaderboard;
     updateAmmoBar();
     updateMineBar();

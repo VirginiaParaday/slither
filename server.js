@@ -140,11 +140,11 @@ function randomColor() { return COLORS[Math.floor(Math.random() * COLORS.length)
 function spawnFood(id) {
   foods[id] = {
     id,
-    x: rand(50, WORLD_WIDTH - 50),
-    y: rand(50, WORLD_HEIGHT - 50),
+    x: Math.floor(rand(50, WORLD_WIDTH - 50)),
+    y: Math.floor(rand(50, WORLD_HEIGHT - 50)),
     color: randomColor(),
     value: Math.random() < 0.15 ? 3 : 1,
-    life: rand(300, 900)
+    life: Math.floor(rand(300, 900))
   };
 }
 function spawnApple() {
@@ -1001,25 +1001,45 @@ io.on('connection', socket => {
   console.log('connect', socket.id);
 
   socket.on('join', ({ name, color, pattern }) => {
-    players[socket.id] = createPlayer(socket.id, name, color, pattern);
+    // Deep sanitize name
+    const sanitizedName = Array.from(String(name || 'Snake'))
+      .filter(char => char.codePointAt(0) > 31) // No control chars
+      .slice(0, 15)
+      .join('');
+
+    const player = createPlayer(socket.id, sanitizedName, color, pattern);
+    players[socket.id] = player;
+
+    // OPTIMIZATION: Send only the 200 closest foods to the spawn point
+    // This dramatically reduces the INIT packet size and prevents UTF-8 decode issues.
+    const foodList = Object.values(foods)
+      .map(f => ({ id: f.id, x: f.x, y: f.y, v: f.value, d: (f.x - player.segments[0].x)**2 + (f.y - player.segments[0].y)**2 }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 200)
+      .map(f => [f.id, f.x, f.y, f.v]); // Compact array format [id, x, y, value]
+
     socket.emit('init', {
       id: socket.id,
-      foods: Object.values(foods),
-      players: Object.values(players),
-      fireballs: Object.values(fireballs),
-      mines: Object.values(mines),
+      foods: foodList, // Compact and subset
+      players: Object.values(players).map(p => ({
+        id: p.id, name: p.name, color: p.color, pattern: p.pattern, 
+        segments: p.id === socket.id ? p.segments : [p.segments[0]], // Only send full segments for self
+        score: Math.floor(p.score), alive: p.alive, isNpc: p.isNpc
+      })),
+      worldWidth: WORLD_WIDTH,
+      worldHeight: WORLD_HEIGHT,
       apples: Object.values(apples),
       greenApples: Object.values(greenApples),
       portals: Object.values(portals),
       puddles: Object.values(puddles),
       larvas: Object.values(larvas),
       slugs: Object.values(slugs),
-      worms: Object.values(worms),
-      ants: Object.values(ants),
-      worldWidth: WORLD_WIDTH,
-      worldHeight: WORLD_HEIGHT
+      worms: Object.values(worms).map(w => ({ id: w.id, head: w.segs[0], len: w.segs.length, angle: w.angle })),
+      ants: Object.values(ants)
     });
-    io.emit('playerJoined', { id: socket.id, name: players[socket.id].name });
+    
+    console.log(`🚀 Init sent to ${socket.id} (${foodList.length} foods)`);
+    io.emit('playerJoined', { id: socket.id, name: player.name });
   });
 
   socket.on('input', ({ angle, boosting }) => {
