@@ -316,11 +316,11 @@ socket.on('init', raw => {
   larvas = data.larvas || [];
   slugs = data.slugs || [];
   
-  // Initialize worms with segments so they don't break drawSnake
+  // Initialize worms with segments so they don't break drawWorm
   worms = (data.worms || []).map(wu => {
-    if (!wu.segments && wu.head) {
-      wu.segments = [];
-      for(let i=0; i< (wu.len || 5); i++) wu.segments.push({...wu.head});
+    if (!wu.segs && wu.head) {
+      wu.segs = [];
+      for(let i=0; i< (wu.len || 5); i++) wu.segs.push({...wu.head});
     }
     return wu;
   });
@@ -398,27 +398,27 @@ socket.on('tick', raw => {
   if (data.puddles)     puddles = data.puddles;
   larvas = data.larvas || [];
   slugs  = data.slugs || [];
-  worms  = data.worms || [];
-  ants   = data.ants || [];
+    if (data.larvas) larvas = data.larvas;
+    if (data.slugs)  slugs  = data.slugs;
+    if (data.ants)   ants   = data.ants;
+
     if (data.worms) {
       const newWorms = [];
       for (const wu of data.worms) {
         let oldWorm = worms.find(w => w.id === wu.id);
         if (!oldWorm) {
-          // New worm, initialize segments
-          if (!wu.segments && wu.head) wu.segments = [wu.head, wu.head];
+          if (!wu.segs && wu.head) wu.segs = [wu.head, wu.head];
           newWorms.push(wu);
         } else {
-          const segs = oldWorm.segments || oldWorm.segs || [];
-          if (wu.segments) {
-            oldWorm.segments = wu.segments;
+          const segs = oldWorm.segs || [];
+          if (wu.segs) {
+            oldWorm.segs = wu.segs;
           } else if (wu.head) {
-            // Reconstruct body from head
             if (segs.length === 0 || (segs[0].x !== wu.head.x || segs[0].y !== wu.head.y)) {
               segs.unshift(wu.head);
               while (segs.length > (wu.len || 1)) segs.pop();
             }
-            oldWorm.segments = segs;
+            oldWorm.segs = segs;
           }
           oldWorm.angle = wu.angle;
           newWorms.push(oldWorm);
