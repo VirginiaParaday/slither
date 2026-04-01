@@ -147,8 +147,18 @@ function createPlayer(id, name, color, pattern) {
     lethal: 0,                 // lethal ticks remaining
     portalCooldown: 0,
     entrancePortal: -1,
-    exitPortal: -1
+    exitPortal: -1,
+    isNpc: false
   };
+}
+
+function spawnNpc() {
+  const npcId = 'npc_' + Date.now();
+  players[npcId] = createPlayer(npcId, 'El Devorador', '#8b0000', 'spiky');
+  const npc = players[npcId];
+  npc.isNpc = true;
+  npc.length = 10;
+  npc.score = 0;
 }
 
 function placeMine(playerId) {
@@ -194,6 +204,37 @@ function gameTick() {
   while (portalCountCurrent < PORTAL_COUNT) {
     spawnPortal();
     portalCountCurrent++;
+  }
+
+  // ── NPC Spawning & AI ──────────────────────────────────────────
+  let activeNpcs = 0;
+  for (const pid in players) {
+    if (players[pid].isNpc && players[pid].alive) activeNpcs++;
+  }
+  if (activeNpcs < 1) spawnNpc();
+
+  for (const pid in players) {
+    const p = players[pid];
+    if (!p.alive || !p.isNpc) continue;
+    
+    if (p.length > 40) p.length = 40; // Max length limit 40
+    
+    let closestObj = null, closestDist = 250 * 250; // Aggro range: 250
+    for (const tId in players) {
+      const target = players[tId];
+      if (target.id === p.id || target.isNpc || !target.alive) continue;
+      const dx = target.segments[0].x - p.segments[0].x;
+      const dy = target.segments[0].y - p.segments[0].y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < closestDist) { closestDist = distSq; closestObj = target; }
+    }
+    if (closestObj) {
+      p.targetAngle = Math.atan2(closestObj.segments[0].y - p.segments[0].y, closestObj.segments[0].x - p.segments[0].x);
+      p.boosting = true;
+    } else {
+      p.boosting = false;
+      if (Math.random() < 0.05) p.targetAngle += rand(-Math.PI/2, Math.PI/2);
+    }
   }
 
   // ── Green Apple expiration ──────────────────────────────────────
@@ -267,15 +308,22 @@ function gameTick() {
     // Check if snake touches the borders - if so, it dies
     if (nx < HEAD_RADIUS || nx > WORLD_WIDTH - HEAD_RADIUS ||
       ny < HEAD_RADIUS || ny > WORLD_HEIGHT - HEAD_RADIUS) {
-      p.alive = false;
-      deaths.push({ id: p.id, killedBy: null });
-      // Drop food from dead snake
-      for (let k = 0; k < p.segments.length; k += 3) {
-        const fid = foodId++;
-        foods[fid] = { id: fid, x: p.segments[k].x, y: p.segments[k].y, color: p.color, value: 1, life: rand(300, 900) };
-        deltaFood.push({ type: 'add', food: foods[fid] });
+      if (p.isNpc) {
+        p.targetAngle += Math.PI;
+        p.angle += Math.PI;
+        nx = head.x + Math.cos(p.angle) * speed * 2;
+        ny = head.y + Math.sin(p.angle) * speed * 2;
+      } else {
+        p.alive = false;
+        deaths.push({ id: p.id, killedBy: null });
+        // Drop food from dead snake
+        for (let k = 0; k < p.segments.length; k += 3) {
+          const fid = foodId++;
+          foods[fid] = { id: fid, x: p.segments[k].x, y: p.segments[k].y, color: p.color, value: 1, life: rand(300, 900) };
+          deltaFood.push({ type: 'add', food: foods[fid] });
+        }
+        continue;
       }
-      continue;
     }
 
     p.segments.unshift({ x: nx, y: ny });
@@ -346,6 +394,7 @@ function gameTick() {
       mines: MAX_MINES - p.mineCount, maxMines: MAX_MINES,
       protected: (p.protection > 0),
       lethal: (p.lethal > 0),
+      isNpc: p.isNpc,
       segments: p.segments
     };
   }
@@ -461,11 +510,32 @@ function gameTick() {
       if (i === j) continue;
       const pa = players[pids[i]], pb = players[pids[j]];
       if (!pa.alive || !pb.alive) continue;
+      if (pa.isNpc && pb.isNpc) continue;
       const headA = pa.segments[0];
-      for (let s = 2; s < pb.segments.length; s++) {
+      const startSeg = pb.isNpc ? 0 : 2;
+      for (let s = startSeg; s < pb.segments.length; s++) {
         const seg = pb.segments[s];
-        if (circlesOverlap(headA.x, headA.y, HEAD_RADIUS - 2, seg.x, seg.y, SNAKE_RADIUS)) {
-          if (pa.lethal > 0) {
+        const hitRad = SNAKE_RADIUS + (pb.isNpc ? 4 : 0);
+        if (circlesOverlap(headA.x, headA.y, HEAD_RADIUS - 2, seg.x, seg.y, hitRad)) {
+          if (pa.isNpc) {
+            pb.alive = false;
+            deaths.push({ id: pb.id, killedBy: pa.id });
+            for (let k = 0; k < pb.segments.length; k += 3) {
+              const fid = foodId++;
+              foods[fid] = { id: fid, x: pb.segments[k].x, y: pb.segments[k].y, color: pb.color, value: 1, life: rand(300, 900) };
+              deltaFood.push({ type: 'add', food: foods[fid] });
+            }
+            break;
+          } else if (pb.isNpc) {
+            pa.alive = false;
+            deaths.push({ id: pa.id, killedBy: pb.id });
+            for (let k = 0; k < pa.segments.length; k += 3) {
+              const fid = foodId++;
+              foods[fid] = { id: fid, x: pa.segments[k].x, y: pa.segments[k].y, color: pa.color, value: 1, life: rand(300, 900) };
+              deltaFood.push({ type: 'add', food: foods[fid] });
+            }
+            break;
+          } else if (pa.lethal > 0) {
             pb.alive = false;
             deaths.push({ id: pb.id, killedBy: pa.id });
             for (let k = 0; k < pb.segments.length; k += 3) {
