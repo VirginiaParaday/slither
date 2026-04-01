@@ -460,6 +460,11 @@
         font-family: "Fredoka One", cursive;
         font-size: 0.85rem;
       }
+      .arrow-orbs {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+      }
 
       /* Fire button for mobile */
       .fire-button {
@@ -552,17 +557,31 @@
       .arrow-orb {
         width: 18px;
         height: 18px;
-        border-radius: 2px;
-        transform: rotate(45deg);
+        border-radius: 50%;
         border: 2px solid rgba(255, 255, 255, 0.15);
         background: rgba(255, 255, 255, 0.05);
-        transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
+        transition:
+          background 0.2s,
+          box-shadow 0.2s,
+          transform 0.15s;
       }
       .arrow-orb.loaded {
-        background: radial-gradient(circle at 35% 35%, #00e5ff, #008080);
-        border-color: #b2ebf2;
+        background: radial-gradient(circle at 35% 35%, #00e5ff, #006080);
+        border-color: #00e5ff;
         box-shadow: 0 0 8px #00e5ff88;
-        transform: rotate(45deg) scale(1);
+      }
+      @keyframes orbArrow {
+        0% {
+          transform: scale(1.5);
+          background: radial-gradient(circle, #fff, #00e5ff);
+        }
+        100% {
+          transform: scale(1);
+          background: rgba(255, 255, 255, 0.05);
+        }
+      }
+      .arrow-orb.firing {
+        animation: orbArrow 0.3s ease forwards;
       }
 
       /* Buff indicator */
