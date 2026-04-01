@@ -28,6 +28,7 @@ let players     = {};
 let foods       = {};
 let fireballs   = {};     // { [id]: {id,x,y,angle,life,color,ownerId} }
 let mines       = {};     // { [id]: {id,x,y,life,color,ownerId} }
+let arrows      = {};     // { [id]: {id,x,y,angle,life,ownerId} }
 let apples      = [];     // incoming list of apples
 let greenApples = [];     // incoming list of green apples
 let portals     = [];     // incoming list of portals
@@ -209,6 +210,10 @@ window.addEventListener('keydown', e => {
     e.preventDefault();
     placeMine();
   }
+  if (e.key === 'e' || e.key === 'E') {
+    e.preventDefault();
+    shootArrow();
+  }
 });
 window.addEventListener('keyup', e => { keys[e.key]=false; });
 
@@ -235,6 +240,19 @@ if (mineBtn) {
   mineBtn.addEventListener('mousedown', e => {
     e.preventDefault();
     placeMine();
+  });
+}
+
+// Arrow button for mobile
+const arrowBtn = document.getElementById('arrowBtn');
+if (arrowBtn) {
+  arrowBtn.addEventListener('touchstart', e => {
+    e.preventDefault();
+    shootArrow();
+  });
+  arrowBtn.addEventListener('mousedown', e => {
+    e.preventDefault();
+    shootArrow();
   });
 }
 
@@ -265,6 +283,20 @@ function placeMine() {
     last.classList.remove('loaded');
     last.classList.add('placing');
     setTimeout(() => last.classList.remove('placing'), 350);
+  }
+}
+
+function shootArrow() {
+  const me = players[myId];
+  if (!me || !me.alive || me.score < 20 || me.arrowAmmo <= 0) return;
+  socket.emit('arrow');
+  // Optimistic UI
+  const orbEls = arrowOrbs.querySelectorAll('.arrow-orb.loaded');
+  if (orbEls.length > 0) {
+    const last = orbEls[orbEls.length - 1];
+    last.classList.remove('loaded');
+    last.classList.add('firing');
+    setTimeout(() => last.classList.remove('firing'), 350);
   }
 }
 
@@ -310,6 +342,7 @@ socket.on('init', raw => {
 
   fireballs = {}; (data.fireballs || []).forEach(fb => { fireballs[fb.id] = fb; });
   mines = {}; (data.mines || []).forEach(m => { mines[m.id] = m; });
+  arrows = {}; (data.arrows || []).forEach(a => { arrows[a.id] = a; });
   apples = data.apples || [];
   greenApples = data.greenApples || [];
   portals = data.portals || [];
@@ -384,6 +417,11 @@ socket.on('tick', raw => {
     if (md.type==='update') mines[md.mine.id]=md.mine;
     if (md.type==='remove') delete mines[md.id];
   }
+  // Apply arrow delta
+  for (const ad of (data.arrowDelta||[])) {
+    if (ad.type==='update') arrows[ad.arrow.id]=ad.arrow;
+    if (ad.type==='remove') delete arrows[ad.id];
+  }
   // Spawn hit effects
   for (const hit of (data.fbHits||[])) {
     spawnExplosion(hit.x, hit.y, players[hit.targetId]?.color || '#ff6b00');
@@ -392,6 +430,9 @@ socket.on('tick', raw => {
     spawnExplosion(hit.x, hit.y, '#ff0000');
   }
   for (const hit of (data.shieldHits||[])) {
+    spawnExplosion(hit.x, hit.y, '#00e5ff');
+  }
+  for (const hit of (data.arrowHits||[])) {
     spawnExplosion(hit.x, hit.y, '#00e5ff');
   }
   if (data.apples)      apples = data.apples;
@@ -432,6 +473,7 @@ socket.on('tick', raw => {
     leaderboard = data.leaderboard;
     updateAmmoBar();
     updateMineBar();
+    updateArrowBar();
     updateBuffUI();
   } catch (err) {
     console.error('❌ Error procesando Tick:', err, data);
@@ -445,6 +487,14 @@ socket.on('fireballSpawned', raw => {
 socket.on('mineSpawned', raw => { 
   const m = typeof raw === 'string' ? JSON.parse(raw) : raw;
   mines[m.id]=m; 
+});
+socket.on('arrowSpawned', raw => { 
+  const a = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  arrows[a.id]=a; 
+});
+socket.on('arrowHit', raw => {
+  const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  spawnExplosion(data.x, data.y, '#00e5ff');
 });
 socket.on('playerLeft', raw => { 
   const { id } = typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -514,6 +564,46 @@ function updateMineBar() {
   const orbs = mineOrbs.querySelectorAll('.mine-orb');
   orbs.forEach((orb, i) => {
     if (i < mines) orb.classList.add('loaded');
+    else          orb.classList.remove('loaded');
+  });
+}
+
+// ── Arrow bar UI ──────────────────────────────────────────────────
+const arrowBar = document.getElementById('arrowBar');
+const arrowOrbs = document.getElementById('arrowOrbs');
+const arrowCount = document.getElementById('arrowCount');
+
+function buildArrowOrbs(max) {
+  arrowOrbs.innerHTML='';
+  for (let i=0; i<max; i++) {
+    const orb = document.createElement('div');
+    orb.className='arrow-orb';
+    arrowOrbs.appendChild(orb);
+  }
+}
+
+let lastArrowCount = -1;
+function updateArrowBar() {
+  const me = players[myId];
+  if (!me) return;
+  
+  // Visibility: only if score >= 20
+  if (me.score >= 20) {
+    arrowBar.style.display = 'block';
+    if (arrowBtn) arrowBtn.style.display = 'flex';
+  } else {
+    arrowBar.style.display = 'none';
+    if (arrowBtn) arrowBtn.style.display = 'none';
+  }
+
+  const ammo = me.arrowAmmo ?? 0, max = 5;
+  if (arrowOrbs.children.length !== max) buildArrowOrbs(max);
+  if (ammo === lastArrowCount) return;
+  lastArrowCount = ammo;
+  arrowCount.textContent = `${ammo}/${max}`;
+  const orbs = arrowOrbs.querySelectorAll('.arrow-orb');
+  orbs.forEach((orb, i) => {
+    if (i < ammo) orb.classList.add('loaded');
     else          orb.classList.remove('loaded');
   });
 }
@@ -1028,6 +1118,58 @@ function drawRock(r) {
   ctx.restore();
 }
 
+function drawArrow(a) {
+  if (!isVisible(a.x, a.y, 40)) return;
+  const {x, y} = worldToScreen(a.x, a.y);
+  
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(a.angle);
+
+  // Motion Blur Trail
+  ctx.globalAlpha = 0.4;
+  ctx.strokeStyle = '#00e5ff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-20, 0);
+  ctx.lineTo(-5, 0);
+  ctx.stroke();
+
+  // Premium Arrow Body (Sleek and sharp)
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 10;
+  ctx.shadowColor = '#00e5ff';
+  
+  // Arrow head
+  ctx.fillStyle = '#f0f0f0';
+  ctx.beginPath();
+  ctx.moveTo(12, 0);
+  ctx.lineTo(0, -6);
+  ctx.lineTo(0, 6);
+  ctx.closePath();
+  ctx.fill();
+
+  // Shaft
+  ctx.strokeStyle = '#f0f0f0';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-12, 0);
+  ctx.stroke();
+
+  // Fletching (feathers)
+  ctx.fillStyle = '#00e5ff';
+  ctx.beginPath();
+  ctx.moveTo(-8, 0);
+  ctx.lineTo(-15, -5);
+  ctx.lineTo(-12, 0);
+  ctx.lineTo(-15, 5);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
 function drawSnake(p) {
   if (!p.alive || !p.segments || p.segments.length<2) return;
   const segs=p.segments, isMe=p.id===myId;
@@ -1249,6 +1391,9 @@ function loop() {
 
     // Mines
     for (const mid in mines) drawMine(mines[mid]);
+
+    // Arrows
+    for (const aid in arrows) drawArrow(arrows[aid]);
 
     // Explosion particles
     updateAndDrawEffects();

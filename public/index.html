@@ -429,10 +429,42 @@
         animation: orbPlace 0.3s ease forwards;
       }
 
+      /* Arrow bar */
+      #arrowBar {
+        position: absolute;
+        bottom: 176px;
+        left: 24px;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 0.5rem 0.9rem;
+        display: none; /* Logic updates this */
+        flex-direction: column;
+        gap: 4px;
+        min-width: 140px;
+        z-index: 10;
+      }
+      .arrow-label {
+        font-size: 0.68rem;
+        font-weight: 800;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .arrow-label span {
+        color: #00e5ff;
+        font-family: "Fredoka One", cursive;
+        font-size: 0.85rem;
+      }
+
       /* Fire button for mobile */
       .fire-button {
         position: absolute;
-        bottom: 180px;
+        bottom: 280px;
         left: 24px;
         width: 70px;
         height: 70px;
@@ -464,7 +496,7 @@
       /* Mine button for mobile */
       .mine-button {
         position: absolute;
-        bottom: 180px;
+        bottom: 280px;
         left: 110px;
         width: 70px;
         height: 70px;
@@ -491,6 +523,46 @@
       .mine-button:active {
         transform: scale(0.95);
         box-shadow: 0 2px 15px rgba(139, 0, 0, 0.6);
+      }
+
+      /* Arrow button for mobile */
+      .arrow-button {
+        position: absolute;
+        bottom: 280px;
+        left: 196px;
+        width: 70px;
+        height: 70px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #008080, #00e5ff);
+        border: 3px solid #b2ebf2;
+        color: #fff;
+        font-size: 1.8rem;
+        cursor: pointer;
+        pointer-events: all;
+        box-shadow: 0 4px 20px rgba(0, 229, 255, 0.4);
+        transition: transform 0.15s, box-shadow 0.15s;
+        display: none; /* Hidden until unlocked */
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+      }
+      .arrow-button:hover { transform: scale(1.1); box-shadow: 0 6px 25px rgba(0, 229, 255, 0.6); }
+      .arrow-button:active { transform: scale(0.95); box-shadow: 0 2px 15px rgba(0, 229, 255, 0.4); }
+
+      .arrow-orb {
+        width: 18px;
+        height: 18px;
+        border-radius: 2px;
+        transform: rotate(45deg);
+        border: 2px solid rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.05);
+        transition: background 0.2s, box-shadow 0.2s, transform 0.15s;
+      }
+      .arrow-orb.loaded {
+        background: radial-gradient(circle at 35% 35%, #00e5ff, #008080);
+        border-color: #b2ebf2;
+        box-shadow: 0 0 8px #00e5ff88;
+        transform: rotate(45deg) scale(1);
       }
 
       /* Buff indicator */
@@ -734,11 +806,16 @@
         <div class="mine-label">💣 Minas <span id="mineCount">3/3</span></div>
         <div class="mine-orbs" id="mineOrbs"></div>
       </div>
+      <div id="arrowBar" style="display: none">
+        <div class="arrow-label">🏹 Flechas <span id="arrowCount">0/5</span></div>
+        <div class="arrow-orbs" id="arrowOrbs"></div>
+      </div>
       <div class="hints-row">
-        Q = disparo &nbsp;|&nbsp; W = mina &nbsp;|&nbsp; Click = turbo
+        Q = fuego | W = mina | E = flecha | Click = turbo
       </div>
       <button id="fireBtn" class="fire-button">🔥</button>
       <button id="mineBtn" class="mine-button">💣</button>
+      <button id="arrowBtn" class="arrow-button">🏹</button>
     </div>
 
     <!-- DEATH -->

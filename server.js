@@ -103,6 +103,15 @@ const ROCK_COUNT = 20;
 const ROCK_RADIUS = 35;
 const ROCK_RELOCATE_TICKS = 900; // 30 seconds at 30 fps
 
+// Arrow constants
+const ARROW_SPEED = 14;
+const ARROW_RADIUS = 8;
+const ARROW_LIFETIME = 100;
+const ARROW_COST = 2;
+const ARROW_DAMAGE = 10;
+const ARROW_MAX_AMMO = 5;
+const ARROW_RECHARGE_SCORE = 5;
+
 // ── State ────────────────────────────────────────────────────────
 const players = {};
 const foods = {};
@@ -132,6 +141,8 @@ const rocks = {};
 let rockRelocateTimer = 0;
 let staticChanged = true; // Force first update
 const BOSS_ID = 'boss_devorador';
+let arrowId = 0;
+const arrows = {};
 
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -301,7 +312,9 @@ function createPlayer(id, name, color, pattern) {
     entrancePortal: -1,
     exitPortal: -1,
     isNpc: false,
-    slow: 0
+    slow: 0,
+    arrowAmmo: 0,
+    arrowRechargeProgress: 0
   };
 }
 
@@ -680,7 +693,8 @@ function gameTick() {
       lethal: (p.lethal > 0),
       isNpc: p.isNpc,
       slow: (p.slow > 0),
-      len: p.segments.length
+      len: p.segments.length,
+      arrowAmmo: p.arrowAmmo
     };
 
     // Only send full segments if it's the first time or every ~2 seconds (60 ticks) as safety
@@ -704,6 +718,13 @@ function gameTick() {
       if (circlesOverlap(head.x, head.y, HEAD_RADIUS, f.x, f.y, FOOD_RADIUS)) {
         p.score += f.value;
         p.length += f.value * 2;
+        // Recharge arrows: 1 per 5 points
+        p.arrowRechargeProgress += f.value;
+        if (p.arrowRechargeProgress >= ARROW_RECHARGE_SCORE) {
+          const arrowsToAdd = Math.floor(p.arrowRechargeProgress / ARROW_RECHARGE_SCORE);
+          p.arrowAmmo = Math.min(ARROW_MAX_AMMO, p.arrowAmmo + arrowsToAdd);
+          p.arrowRechargeProgress %= ARROW_RECHARGE_SCORE;
+        }
         // Recharge ammo on eat
         if (p.ammo < p.maxAmmo) p.ammo = Math.min(p.maxAmmo, p.ammo + AMMO_PER_FOOD);
         delete foods[fid];
@@ -717,6 +738,13 @@ function gameTick() {
       if (circlesOverlap(head.x, head.y, HEAD_RADIUS, L.x, L.y, LARVA_RADIUS)) {
         p.score += LARVA_VALUE;
         p.length += LARVA_VALUE * 2;
+        // Recharge arrows: 1 per 5 points
+        p.arrowRechargeProgress += LARVA_VALUE;
+        if (p.arrowRechargeProgress >= ARROW_RECHARGE_SCORE) {
+          const arrowsToAdd = Math.floor(p.arrowRechargeProgress / ARROW_RECHARGE_SCORE);
+          p.arrowAmmo = Math.min(ARROW_MAX_AMMO, p.arrowAmmo + arrowsToAdd);
+          p.arrowRechargeProgress %= ARROW_RECHARGE_SCORE;
+        }
         delete larvas[lid];
       }
     }
@@ -756,6 +784,13 @@ function gameTick() {
         if (circlesOverlap(head.x, head.y, HEAD_RADIUS, W.segs[s].x, W.segs[s].y, WORM_RADIUS)) {
           p.score += WORM_VALUE;
           p.length += WORM_VALUE * 2;
+          // Recharge arrows: 1 per 5 points
+          p.arrowRechargeProgress += WORM_VALUE;
+          if (p.arrowRechargeProgress >= ARROW_RECHARGE_SCORE) {
+            const arrowsToAdd = Math.floor(p.arrowRechargeProgress / ARROW_RECHARGE_SCORE);
+            p.arrowAmmo = Math.min(ARROW_MAX_AMMO, p.arrowAmmo + arrowsToAdd);
+            p.arrowRechargeProgress %= ARROW_RECHARGE_SCORE;
+          }
           delete worms[wid];
           break;
         }
@@ -862,7 +897,17 @@ function gameTick() {
               }
               // Give shooter some score
               const shooter = players[fb.ownerId];
-              if (shooter) { shooter.score += dmg * 0.5; }
+              if (shooter) { 
+                const gain = dmg * 0.5;
+                shooter.score += gain; 
+                // Recharge arrows: 1 per 5 points
+                shooter.arrowRechargeProgress += gain;
+                if (shooter.arrowRechargeProgress >= ARROW_RECHARGE_SCORE) {
+                  const arrowsToAdd = Math.floor(shooter.arrowRechargeProgress / ARROW_RECHARGE_SCORE);
+                  shooter.arrowAmmo = Math.min(ARROW_MAX_AMMO, shooter.arrowAmmo + arrowsToAdd);
+                  shooter.arrowRechargeProgress %= ARROW_RECHARGE_SCORE;
+                }
+              }
             }
             fbHits.push({ fbId: fbid, targetId: pid, x: fb.x, y: fb.y });
           }
@@ -1055,8 +1100,46 @@ function gameTick() {
     }
   }
 
+  // ── Arrow updates ─────────────────────────────────────────────
+  const arrowDelta = [];
+  for (const aid in arrows) {
+    const a = arrows[aid];
+    a.x += Math.cos(a.angle) * ARROW_SPEED;
+    a.y += Math.sin(a.angle) * ARROW_SPEED;
+    a.life--;
+
+    if (a.life <= 0 || a.x < 0 || a.x > WORLD_WIDTH || a.y < 0 || a.y > WORLD_HEIGHT) {
+      delete arrows[aid];
+      arrowDelta.push({ type: 'remove', id: aid });
+      continue;
+    }
+
+    let hit = false;
+    for (const pid in players) {
+      if (pid === a.ownerId) continue;
+      const target = players[pid];
+      if (!target.alive) continue;
+      const head = target.segments[0];
+      if (circlesOverlap(a.x, a.y, ARROW_RADIUS, head.x, head.y, HEAD_RADIUS)) {
+        // Hit! Reduce score
+        target.score = Math.max(0, target.score - ARROW_DAMAGE);
+        // Shrink target if needed
+        target.length = Math.max(4, target.length - 2);
+        
+        io.emit('arrowHit', JSON.stringify({ x: a.x, y: a.y, targetId: pid }));
+        delete arrows[aid];
+        arrowDelta.push({ type: 'remove', id: aid });
+        hit = true;
+        break;
+      }
+    }
+    if (!hit) {
+      arrowDelta.push({ type: 'update', arrow: { id: a.id, x: a.x, y: a.y, angle: a.angle, ownerId: a.ownerId } });
+    }
+  }
+
   // Explicit manual stringification for Tick to avoid binary frame issues in production
-  io.emit('tick', JSON.stringify(tickPacket));
+  io.emit('tick', JSON.stringify({ ...tickPacket, arrowDelta }));
 
   for (const d of deaths) io.to(d.id).emit('died', JSON.stringify({ killedBy: d.killedBy }));
 }
@@ -1104,7 +1187,8 @@ io.on('connection', socket => {
       slugs: Object.values(slugs),
       worms: Object.values(worms).map(w => ({ id: w.id, head: w.segs[0], len: w.segs.length, angle: w.angle })),
       ants: Object.values(ants),
-      rocks: Object.values(rocks)
+      rocks: Object.values(rocks),
+      arrows: Object.values(arrows)
     }));
     
     console.log(`🚀 Init sent to ${socket.id} (${foodList.length} foods)`);
@@ -1147,6 +1231,28 @@ io.on('connection', socket => {
       // Broadcast new mine to all
       io.emit('mineSpawned', JSON.stringify(mine));
     }
+  });
+
+  socket.on('arrow', () => {
+    const p = players[socket.id];
+    if (!p || !p.alive || p.score < 20 || p.arrowAmmo <= 0) return;
+    
+    p.arrowAmmo--;
+    p.score = Math.max(0, p.score - ARROW_COST);
+    // Update length based on score
+    p.length = Math.floor(4 + p.score / 2);
+    
+    const head = p.segments[0];
+    const aid = arrowId++;
+    arrows[aid] = {
+      id: aid,
+      ownerId: socket.id,
+      x: head.x + Math.cos(p.angle) * 20,
+      y: head.y + Math.sin(p.angle) * 20,
+      angle: p.angle,
+      life: ARROW_LIFETIME
+    };
+    io.emit('arrowSpawned', JSON.stringify(arrows[aid]));
   });
 
   socket.on('respawn', raw => {
