@@ -130,7 +130,7 @@ function gameTick() {
     while (diff < -Math.PI) diff += 2 * Math.PI;
     p.angle += Math.sign(diff) * Math.min(Math.abs(diff), 0.10);
 
-    const speed = p.boosting ? BOOST_SPEED : SNAKE_SPEED;
+    const speed = (p.boosting && p.length > 10) ? BOOST_SPEED : SNAKE_SPEED;
     const head  = p.segments[0];
     let nx = head.x + Math.cos(p.angle) * speed;
     let ny = head.y + Math.sin(p.angle) * speed;
@@ -153,8 +153,8 @@ function gameTick() {
     while (p.segments.length > p.length) p.segments.pop();
 
     if (p.boosting && p.length > 10) {
-      p.length -= 0.05;
-      p.score   = Math.max(0, p.score - 0.05);
+      p.length -= 0.3;
+      p.score   = Math.max(0, p.score - 0.3);
       if (Math.random() < 0.3) {
         const fid = foodId++;
         foods[fid] = { id: fid, x: p.segments[p.segments.length-1].x, y: p.segments[p.segments.length-1].y, color: p.color, value: 1 };
@@ -164,7 +164,7 @@ function gameTick() {
 
     deltaPlayers[pid] = {
       id: p.id, name: p.name, color: p.color, pattern: p.pattern,
-      score: Math.floor(p.score), alive: p.alive, boosting: p.boosting,
+      score: Math.floor(p.score), alive: p.alive, boosting: (p.boosting && p.length > 10),
       ammo: p.ammo, maxAmmo: p.maxAmmo,
       mines: MAX_MINES - p.mineCount, maxMines: MAX_MINES,
       segments: p.segments
