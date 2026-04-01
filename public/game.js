@@ -192,9 +192,9 @@ window.addEventListener('resize', resize); resize();
 // ── Input ─────────────────────────────────────────────────────────
 window.addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; });
 window.addEventListener('touchmove', e => { e.preventDefault(); mouse.x=e.touches[0].clientX; mouse.y=e.touches[0].clientY; }, { passive:false });
-window.addEventListener('mousedown',  () => { boosting=true;  });
+window.addEventListener('mousedown',  (e) => { if (!e.target.closest('button')) boosting=true;  });
 window.addEventListener('mouseup',    () => { boosting=false; });
-window.addEventListener('touchstart', () => { boosting=true;  });
+window.addEventListener('touchstart', (e) => { if (!e.target.closest('button')) boosting=true;  }, { passive: true });
 window.addEventListener('touchend',   () => { boosting=false; });
 
 const keys = {};
