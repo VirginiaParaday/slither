@@ -363,6 +363,34 @@ function drawBackground() {
   ctx.restore();
 }
 
+function drawWorldBorder() {
+  const borderWidth = 8;
+  const borderColor = '#ff0000';
+  
+  // Convert world corners to screen coordinates
+  const topLeft = worldToScreen(0, 0);
+  const topRight = worldToScreen(worldW, 0);
+  const bottomLeft = worldToScreen(0, worldH);
+  const bottomRight = worldToScreen(worldW, worldH);
+  
+  ctx.save();
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = borderWidth;
+  ctx.shadowBlur = 15;
+  ctx.shadowColor = borderColor;
+  
+  // Draw the world border rectangle
+  ctx.beginPath();
+  ctx.moveTo(topLeft.x, topLeft.y);
+  ctx.lineTo(topRight.x, topRight.y);
+  ctx.lineTo(bottomRight.x, bottomRight.y);
+  ctx.lineTo(bottomLeft.x, bottomLeft.y);
+  ctx.closePath();
+  ctx.stroke();
+  
+  ctx.restore();
+}
+
 function drawFood(f) {
   if (!isVisible(f.x,f.y,20)) return;
   const {x,y}=worldToScreen(f.x,f.y);
@@ -504,6 +532,7 @@ function loop() {
   }
 
   drawBackground();
+  drawWorldBorder();
 
   // Food
   for (const fid in foods) drawFood(foods[fid]);
