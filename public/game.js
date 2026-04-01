@@ -667,24 +667,67 @@ function drawSnake(p) {
   for (let i=total-1; i>=1; i--) {
     if (!isVisible(segs[i].x,segs[i].y,30)) continue;
     const {x,y}=worldToScreen(segs[i].x,segs[i].y);
-    ctx.shadowBlur=0;
-    applySegmentStyle(ctx,pattern,color,i,total,x,y,9,false);
-    ctx.globalAlpha=0.7+(1-i/total)*0.3;
-    ctx.beginPath(); ctx.arc(x,y,9,0,Math.PI*2); ctx.fill();
-    if (pattern==='neon') ctx.stroke();
-    ctx.shadowBlur=0; ctx.globalAlpha=1;
-    drawSegmentOverlay(ctx,pattern,color,x,y,9,i);
+    if (p.isNpc) {
+      ctx.save();
+      // alternating cyan/blue colors
+      ctx.fillStyle = (Math.floor(i/3) % 2 === 0) ? '#48dbfb' : '#0abde3';
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = 'rgba(255,0,85,0.7)';
+      ctx.beginPath(); ctx.arc(x,y,14,0,Math.PI*2); ctx.fill();
+      ctx.restore();
+    } else {
+      ctx.shadowBlur=0;
+      applySegmentStyle(ctx,pattern,color,i,total,x,y,9,false);
+      ctx.globalAlpha=0.7+(1-i/total)*0.3;
+      ctx.beginPath(); ctx.arc(x,y,9,0,Math.PI*2); ctx.fill();
+      if (pattern==='neon') ctx.stroke();
+      ctx.shadowBlur=0; ctx.globalAlpha=1;
+      drawSegmentOverlay(ctx,pattern,color,x,y,9,i);
+    }
   }
 
   const head=segs[0];
   if (isVisible(head.x,head.y)) {
     const {x:hx,y:hy}=worldToScreen(head.x,head.y);
-    if (p.boosting){ctx.shadowBlur=20;ctx.shadowColor=color;}
-    applySegmentStyle(ctx,pattern,color,0,total,hx,hy,11,true);
-    ctx.beginPath(); ctx.arc(hx,hy,11,0,Math.PI*2); ctx.fill();
-    if (pattern==='neon') ctx.stroke();
-    ctx.shadowBlur=0;
-    drawSegmentOverlay(ctx,pattern,color,hx,hy,11,0);
+    if (p.isNpc) {
+      const ea = Math.atan2(segs[0].y-segs[1].y, segs[0].x-segs[1].x);
+      ctx.save();
+      ctx.translate(hx, hy);
+      ctx.rotate(ea);
+      
+      // Red outer glow and head base
+      ctx.shadowBlur = 15; ctx.shadowColor = '#ff0055';
+      ctx.fillStyle = '#48dbfb';
+      ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI*2); ctx.fill();
+      ctx.shadowBlur = 0;
+      
+      // Magenta curving horns
+      ctx.fillStyle = '#f50057';
+      ctx.beginPath(); ctx.moveTo(0, -10); ctx.quadraticCurveTo(-15, -25, -25, -20); ctx.quadraticCurveTo(-10, -13, -5, -8); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(0, 10); ctx.quadraticCurveTo(-15, 25, -25, 20); ctx.quadraticCurveTo(-10, 13, -5, 8); ctx.fill();
+      
+      // Big Eyes
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(6, -6, 5, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(6, 6, 5, 0, Math.PI*2); ctx.fill();
+      // Pupils
+      ctx.fillStyle = '#000000';
+      ctx.beginPath(); ctx.arc(7, -6, 3, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(7, 6, 3, 0, Math.PI*2); ctx.fill();
+      // Gleams
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(8, -7, 1, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(8, 5, 1, 0, Math.PI*2); ctx.fill();
+      
+      ctx.restore();
+    } else {
+      if (p.boosting){ctx.shadowBlur=20;ctx.shadowColor=color;}
+      applySegmentStyle(ctx,pattern,color,0,total,hx,hy,11,true);
+      ctx.beginPath(); ctx.arc(hx,hy,11,0,Math.PI*2); ctx.fill();
+      if (pattern==='neon') ctx.stroke();
+      ctx.shadowBlur=0;
+      drawSegmentOverlay(ctx,pattern,color,hx,hy,11,0);
+    }
 
     if (p.protected) {
       ctx.beginPath();
@@ -706,20 +749,22 @@ function drawSnake(p) {
       ctx.shadowBlur = 0;
     }
 
-    const ea=Math.atan2(segs[0].y-segs[1].y,segs[0].x-segs[1].x);
-    const px2=Math.cos(ea+Math.PI/2)*4.5, py2=Math.sin(ea+Math.PI/2)*4.5;
-    const fx=Math.cos(ea)*3, fy=Math.sin(ea)*3;
-    for (const s of [-1,1]) {
-      const ex=hx+px2*s+fx, ey=hy+py2*s+fy;
-      ctx.beginPath(); ctx.arc(ex,ey,3,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.fill();
-      ctx.beginPath(); ctx.arc(ex+.5,ey+.5,1.5,0,Math.PI*2); ctx.fillStyle='#111'; ctx.fill();
+    if (!p.isNpc) {
+      const ea=Math.atan2(segs[0].y-segs[1].y,segs[0].x-segs[1].x);
+      const px2=Math.cos(ea+Math.PI/2)*4.5, py2=Math.sin(ea+Math.PI/2)*4.5;
+      const fx=Math.cos(ea)*3, fy=Math.sin(ea)*3;
+      for (const s of [-1,1]) {
+        const ex=hx+px2*s+fx, ey=hy+py2*s+fy;
+        ctx.beginPath(); ctx.arc(ex,ey,3,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.fill();
+        ctx.beginPath(); ctx.arc(ex+.5,ey+.5,1.5,0,Math.PI*2); ctx.fillStyle='#111'; ctx.fill();
+      }
     }
 
     ctx.font='bold 12px Nunito,sans-serif';
     ctx.fillStyle=isMe?'#3fb950':'#e6edf3';
     ctx.textAlign='center';
     ctx.shadowBlur=4; ctx.shadowColor='#00000090';
-    ctx.fillText(p.name,hx,hy+24);
+    ctx.fillText(p.name,hx,hy+(p.isNpc ? 28 : 24));
     ctx.shadowBlur=0;
   }
   ctx.restore();
