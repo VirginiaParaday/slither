@@ -1,6 +1,5 @@
 // ── game.js ──────────────────────────────────────────────────────
 const socket = io({
-  transports: ['websocket', 'polling'], // try websocket first, fallback to polling
   upgrade: true,
   reconnection: true,
   reconnectionAttempts: 10,
