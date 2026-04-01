@@ -29,6 +29,8 @@ let portals     = [];     // incoming list of portals
 let puddles     = [];     // incoming list of puddles
 let larvas      = [];     // incoming list of larvae
 let slugs       = [];     // incoming list of slugs
+let worms       = [];     // incoming list of earthworms
+let ants        = [];     // incoming list of ants
 let hitEffects  = [];     // visual-only explosion particles
 let worldW      = 3000;
 let worldH      = 3000;
@@ -282,6 +284,8 @@ socket.on('init', data => {
   puddles=data.puddles||[];
   larvas=data.larvas||[];
   slugs=data.slugs||[];
+  worms=data.worms||[];
+  ants=data.ants||[];
   requestAnimationFrame(loop);
 });
 
@@ -317,6 +321,8 @@ socket.on('tick', data => {
   puddles=data.puddles||[];
   larvas=data.larvas||[];
   slugs=data.slugs||[];
+  worms=data.worms||[];
+  ants=data.ants||[];
   leaderboard=data.leaderboard;
   updateAmmoBar();
   updateMineBar();
@@ -685,7 +691,79 @@ function drawSlug(S) {
   ctx.strokeStyle = '#7cb342'; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(16, -2); ctx.lineTo(18, -4 + eyeWave); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(16, 2); ctx.lineTo(18, 4 - eyeWave); ctx.stroke();
+  ctx.restore();
+}
 
+function drawWorm(W) {
+  if (!W.segs || W.segs.length < 2) return;
+  if (!isVisible(W.segs[0].x, W.segs[0].y, 80)) return;
+
+  ctx.save();
+  // Body segments (tail to head for proper overlap)
+  for (let i = W.segs.length - 1; i >= 0; i--) {
+    const {x, y} = worldToScreen(W.segs[i].x, W.segs[i].y);
+    const t = i / W.segs.length;
+    ctx.fillStyle = `hsl(${10 + t*30}, 70%, ${45 + t*15}%)`;
+    ctx.shadowBlur = 3; ctx.shadowColor = 'rgba(180,80,0,0.5)';
+    const r = 7 + (1 - t) * 2;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    // Segment ring
+    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, r - 1, 0, Math.PI * 2); ctx.stroke();
+  }
+  // Head
+  const h = worldToScreen(W.segs[0].x, W.segs[0].y);
+  const dir = Math.atan2(W.segs[0].y - W.segs[1].y, W.segs[0].x - W.segs[1].x);
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#c62828';
+  ctx.beginPath(); ctx.arc(h.x, h.y, 9, 0, Math.PI * 2); ctx.fill();
+  const ex = Math.cos(dir + Math.PI/2) * 4;
+  const ey = Math.sin(dir + Math.PI/2) * 4;
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(h.x + ex, h.y + ey, 2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(h.x - ex, h.y - ey, 2, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawAnt(A) {
+  if (!isVisible(A.x, A.y, 20)) return;
+  const {x, y} = worldToScreen(A.x, A.y);
+  const paused = A.pauseTicks > 0;
+  const t = Date.now() * 0.02;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(A.angle);
+
+  // 3 pairs of legs
+  ctx.strokeStyle = '#c62828'; ctx.lineWidth = 1.5;
+  for (let s of [-1, 1]) {
+    for (let i = 0; i < 3; i++) {
+      const lx = (i - 1) * 5;
+      const ly = s * (paused ? 6 : 6 + Math.sin(t + i * 1.2) * 3);
+      ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx + s * 2, ly); ctx.stroke();
+    }
+  }
+  // Abdomen
+  ctx.fillStyle = '#b71c1c';
+  ctx.shadowBlur = 6; ctx.shadowColor = '#ff1744';
+  ctx.beginPath(); ctx.ellipse(-5, 0, 6, 5, 0, 0, Math.PI * 2); ctx.fill();
+  // Thorax
+  ctx.fillStyle = '#d32f2f';
+  ctx.beginPath(); ctx.ellipse(3, 0, 4, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+  // Head
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#c62828';
+  ctx.beginPath(); ctx.ellipse(9, 0, 3.5, 3, 0, 0, Math.PI * 2); ctx.fill();
+  // Antennae
+  ctx.strokeStyle = '#b71c1c'; ctx.lineWidth = 1;
+  const aw = paused ? 0 : Math.sin(t * 0.7) * 0.3;
+  ctx.beginPath(); ctx.moveTo(11, -1); ctx.lineTo(16, -5 + aw * 10); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(11, 1); ctx.lineTo(16, 5 - aw * 10); ctx.stroke();
+  // Dot eyes
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(10.5, -1.3, 1, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(10.5, 1.3, 1, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
 }
 
@@ -957,6 +1035,12 @@ function loop() {
 
   // Slugs
   for (const S of slugs) drawSlug(S);
+
+  // Earthworms
+  for (const W of worms) drawWorm(W);
+
+  // Ants
+  for (const A of ants) drawAnt(A);
 
   // Snakes
   for (const pid in players) { if (pid!==myId) drawSnake(players[pid]); }

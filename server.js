@@ -56,6 +56,24 @@ const SLUG_SPEED = 0.7;
 const SLUG_DAMAGE = 15;
 const SLUG_HIT_COOLDOWN = 90; // ticks between hits (~3 sec)
 
+// Earthworm constants
+const WORM_COUNT = 10;
+const WORM_SEGS = 12;
+const WORM_RADIUS = 7;
+const WORM_SPEED = 2.7;
+const WORM_SEG_DIST = 10;
+const WORM_VALUE = 10; // double larva
+
+// Ant constants
+const ANT_COUNT = 10;
+const ANT_RADIUS = 10;
+const ANT_SPEED = 3.5;
+const ANT_DAMAGE = 25;
+const ANT_DRAG_TICKS = 60;
+const ANT_MOVE_TICKS = 25; // ticks moving per burst
+const ANT_PAUSE_TICKS = 15; // ticks pausing per burst
+const ANT_HIT_COOLDOWN = 120;
+
 // Fireball constants
 const FIREBALL_SPEED = 9;      // px/tick
 const FIREBALL_RADIUS = 10;
@@ -81,6 +99,8 @@ const portals = {}; // { [id]: Portal }
 const puddles = {}; // { [id]: Puddle }
 const larvas = {};  // { [id]: Larva }
 const slugs  = {};  // { [id]: Slug }
+const worms  = {};  // { [id]: Worm }
+const ants   = {};  // { [id]: Ant }
 let foodId = 0;
 let fireballId = 0;
 let mineId = 0;
@@ -90,6 +110,8 @@ let portalId = 0;
 let puddleId = 0;
 let larvaId = 0;
 let slugId = 0;
+let wormId = 0;
+let antId = 0;
 
 // ── Helpers ──────────────────────────────────────────────────────
 const rand = (min, max) => Math.random() * (max - min) + min;
@@ -166,6 +188,17 @@ function spawnSlug() {
     angle: rand(0, Math.PI * 2)
   };
 }
+function spawnWorm() {
+  const id = wormId++;
+  const sx = rand(200, WORLD_WIDTH - 200);
+  const sy = rand(200, WORLD_HEIGHT - 200);
+  const angle = rand(0, Math.PI * 2);
+  const segs = [];
+  for (let i = 0; i < WORM_SEGS; i++) {
+    segs.push({ x: sx - Math.cos(angle) * i * WORM_SEG_DIST, y: sy - Math.sin(angle) * i * WORM_SEG_DIST });
+  }
+  worms[id] = { id, segs, angle };
+}
 function initFood() {
   for (let i = 0; i < FOOD_COUNT; i++) spawnFood(foodId++);
   for (let i = 0; i < APPLE_COUNT; i++) spawnApple();
@@ -174,6 +207,22 @@ function initFood() {
   for (let i = 0; i < PUDDLE_COUNT; i++) spawnPuddle();
   for (let i = 0; i < LARVA_COUNT; i++) spawnLarva();
   for (let i = 0; i < SLUG_COUNT; i++) spawnSlug();
+  for (let i = 0; i < WORM_COUNT; i++) spawnWorm();
+}
+
+function spawnAnt() {
+  const id = antId++;
+  ants[id] = {
+    id,
+    x: rand(150, WORLD_WIDTH - 150),
+    y: rand(150, WORLD_HEIGHT - 150),
+    angle: rand(0, Math.PI * 2),
+    moveTicks: ANT_MOVE_TICKS,
+    pauseTicks: 0
+  };
+}
+function initAnts() {
+  for (let i = 0; i < ANT_COUNT; i++) spawnAnt();
 }
 
 function createPlayer(id, name, color, pattern) {
@@ -399,10 +448,69 @@ function gameTick() {
     slugCountCurrent++;
   }
 
+  // ── Worm Movement ──────────────────────────────────────────────
+  let wormCountCurrent = 0;
+  for (const wid in worms) {
+    wormCountCurrent++;
+    const W = worms[wid];
+    if (Math.random() < 0.04) W.angle += rand(-0.35, 0.35);
+    const head = W.segs[0];
+    const nx = head.x + Math.cos(W.angle) * WORM_SPEED;
+    const ny = head.y + Math.sin(W.angle) * WORM_SPEED;
+    // wall bounce
+    let na = W.angle;
+    if (nx < WORM_RADIUS || nx > WORLD_WIDTH - WORM_RADIUS) na = Math.PI - na;
+    if (ny < WORM_RADIUS || ny > WORLD_HEIGHT - WORM_RADIUS) na = -na;
+    W.angle = na;
+    const fnx = Math.max(WORM_RADIUS, Math.min(WORLD_WIDTH - WORM_RADIUS, nx));
+    const fny = Math.max(WORM_RADIUS, Math.min(WORLD_HEIGHT - WORM_RADIUS, ny));
+    W.segs.unshift({ x: fnx, y: fny });
+    W.segs.pop();
+  }
+  while (wormCountCurrent < WORM_COUNT) {
+    spawnWorm();
+    wormCountCurrent++;
+  }
+
+  // ── Ant Movement ──────────────────────────────────────────────
+  for (const aid in ants) {
+    const A = ants[aid];
+    if (A.pauseTicks > 0) {
+      A.pauseTicks--;
+      continue;
+    }
+    // Random direction change
+    if (Math.random() < 0.15) A.angle += rand(-Math.PI/2, Math.PI/2);
+    A.x += Math.cos(A.angle) * ANT_SPEED;
+    A.y += Math.sin(A.angle) * ANT_SPEED;
+    if (A.x < ANT_RADIUS) { A.x = ANT_RADIUS; A.angle = Math.PI - A.angle; }
+    else if (A.x > WORLD_WIDTH - ANT_RADIUS) { A.x = WORLD_WIDTH - ANT_RADIUS; A.angle = Math.PI - A.angle; }
+    if (A.y < ANT_RADIUS) { A.y = ANT_RADIUS; A.angle = -A.angle; }
+    else if (A.y > WORLD_HEIGHT - ANT_RADIUS) { A.y = WORLD_HEIGHT - ANT_RADIUS; A.angle = -A.angle; }
+    A.moveTicks--;
+    if (A.moveTicks <= 0) {
+      A.moveTicks = ANT_MOVE_TICKS;
+      A.pauseTicks = ANT_PAUSE_TICKS;
+      A.angle += rand(-Math.PI * 0.75, Math.PI * 0.75); // new direction after pause
+    }
+  }
+
   // ── Move players ──────────────────────────────────────────────
   for (const pid in players) {
     const p = players[pid];
     if (!p.alive) continue;
+
+    // Ant drag check, applied to head
+    if (!p.isNpc && p.dragTicks === undefined) p.dragTicks = 0;
+    if (!p.isNpc) {
+      if (p.dragTicks > 0) {
+        p.dragTicks--;
+        // Force snake heading toward ant's last angle
+        const diff2 = p.dragAngle - p.angle;
+        const d2 = ((diff2 + Math.PI) % (2 * Math.PI)) - Math.PI;
+        p.targetAngle = p.dragAngle;
+      }
+    }
 
     let diff = p.targetAngle - p.angle;
     while (diff > Math.PI) diff -= 2 * Math.PI;
@@ -571,6 +679,48 @@ function gameTick() {
             S._hitCooldown[p.id] = SLUG_HIT_COOLDOWN;
             break;
           }
+        }
+      }
+    }
+
+    // Eat earthworms (head touches any worm segment)
+    for (const wid in worms) {
+      const W = worms[wid];
+      for (let s = 0; s < W.segs.length; s++) {
+        if (circlesOverlap(head.x, head.y, HEAD_RADIUS, W.segs[s].x, W.segs[s].y, WORM_RADIUS)) {
+          p.score += WORM_VALUE;
+          p.length += WORM_VALUE * 2;
+          delete worms[wid];
+          break;
+        }
+      }
+    }
+
+    // Ant collision: drag + damage
+    if (!p.isNpc) {
+      for (const aid in ants) {
+        const A = ants[aid];
+        A._hitCooldown = A._hitCooldown || {};
+        const cooldown = A._hitCooldown[p.id] || 0;
+        if (cooldown > 0) { A._hitCooldown[p.id]--; continue; }
+        if (circlesOverlap(head.x, head.y, HEAD_RADIUS, A.x, A.y, ANT_RADIUS)) {
+          // Damage
+          const dmg = Math.min(ANT_DAMAGE, p.length - 4);
+          if (dmg > 0) {
+            p.length = Math.max(4, p.length - dmg);
+            p.score = Math.max(0, p.score - dmg * 0.5);
+            for (let k = 0; k < dmg * 2; k++) {
+              const idx = p.segments.length - 1 - k;
+              if (idx < 0) break;
+              const fid = foodId++;
+              foods[fid] = { id: fid, x: p.segments[idx].x, y: p.segments[idx].y, color: p.color, value: 1, life: rand(300, 600) };
+              deltaFood.push({ type: 'add', food: foods[fid] });
+            }
+          }
+          // Drag
+          p.dragAngle = A.angle;
+          p.dragTicks = ANT_DRAG_TICKS;
+          A._hitCooldown[p.id] = ANT_HIT_COOLDOWN;
         }
       }
     }
@@ -786,7 +936,7 @@ function gameTick() {
     .sort((a, b) => b.score - a.score).slice(0, 10)
     .map(p => ({ id: p.id, name: p.name, score: Math.floor(p.score), color: p.color, alive: p.alive }));
 
-  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits, apples: Object.values(apples), shieldHits, greenApples: Object.values(greenApples), portals: Object.values(portals), puddles: Object.values(puddles), larvas: Object.values(larvas), slugs: Object.values(slugs) });
+  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits, apples: Object.values(apples), shieldHits, greenApples: Object.values(greenApples), portals: Object.values(portals), puddles: Object.values(puddles), larvas: Object.values(larvas), slugs: Object.values(slugs), worms: Object.values(worms), ants: Object.values(ants) });
 
   for (const d of deaths) io.to(d.id).emit('died', { killedBy: d.killedBy });
 }
@@ -809,6 +959,8 @@ io.on('connection', socket => {
       puddles: Object.values(puddles),
       larvas: Object.values(larvas),
       slugs: Object.values(slugs),
+      worms: Object.values(worms),
+      ants: Object.values(ants),
       worldWidth: WORLD_WIDTH,
       worldHeight: WORLD_HEIGHT
     });
@@ -866,8 +1018,9 @@ io.on('connection', socket => {
 });
 
 // ── Boot ─────────────────────────────────────────────────────────
-initFood();
-setInterval(gameTick, TICK_RATE);
+  initFood();
+  initAnts();
+  setInterval(gameTick, 1000 / 30);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`🐍 Slither server → http://localhost:${PORT}`));
