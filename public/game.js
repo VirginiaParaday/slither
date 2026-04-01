@@ -505,6 +505,17 @@ function drawWorldBorder() {
   ctx.closePath();
   ctx.stroke();
   
+  // Draw semi-transparent blurred red area outside the world
+  ctx.beginPath();
+  // Outer rectangle covering the screen plus margin
+  ctx.rect(-1000, -1000, canvas.width + 2000, canvas.height + 2000);
+  // Inner rectangle (world boundaries)
+  ctx.rect(topLeft.x, topLeft.y, topRight.x - topLeft.x, bottomLeft.y - topLeft.y);
+  
+  ctx.fillStyle = 'rgba(255, 0, 0, 0.18)';
+  ctx.shadowBlur = 0;
+  ctx.fill('evenodd');
+  
   ctx.restore();
 }
 
