@@ -364,10 +364,75 @@
         margin-top: 2px;
       }
 
+      /* Mine bar */
+      #mineBar {
+        position: absolute;
+        bottom: 100px;
+        left: 24px;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 0.5rem 0.9rem;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 140px;
+      }
+      .mine-label {
+        font-size: 0.68rem;
+        font-weight: 800;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .mine-label span {
+        color: #ff4444;
+        font-family: "Fredoka One", cursive;
+        font-size: 0.85rem;
+      }
+      .mine-orbs {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+      }
+      .mine-orb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.05);
+        transition:
+          background 0.2s,
+          box-shadow 0.2s,
+          transform 0.15s;
+      }
+      .mine-orb.loaded {
+        background: radial-gradient(circle at 35% 35%, #ff6666, #8b0000);
+        border-color: #ff4444;
+        box-shadow: 0 0 8px #ff444488;
+      }
+      @keyframes orbPlace {
+        0% {
+          transform: scale(1.5);
+          background: radial-gradient(circle, #fff, #ff6666);
+        }
+        100% {
+          transform: scale(1);
+          background: rgba(255, 255, 255, 0.05);
+        }
+      }
+      .mine-orb.placing {
+        animation: orbPlace 0.3s ease forwards;
+      }
+
       /* Fire button for mobile */
       .fire-button {
         position: absolute;
-        bottom: 24px;
+        bottom: 180px;
         left: 24px;
         width: 70px;
         height: 70px;
@@ -399,7 +464,7 @@
       /* Mine button for mobile */
       .mine-button {
         position: absolute;
-        bottom: 24px;
+        bottom: 180px;
         left: 110px;
         width: 70px;
         height: 70px;
@@ -616,9 +681,13 @@
       <div id="ammoBar">
         <div class="ammo-label">🔥 Fuego <span id="ammoCount">5/5</span></div>
         <div class="ammo-orbs" id="ammoOrbs"></div>
-        <div class="hints-row">
-          Espacio = disparo &nbsp;|&nbsp; Q = mina &nbsp;|&nbsp; Click = turbo
-        </div>
+      </div>
+      <div id="mineBar">
+        <div class="mine-label">💣 Minas <span id="mineCount">3/3</span></div>
+        <div class="mine-orbs" id="mineOrbs"></div>
+      </div>
+      <div class="hints-row">
+        Espacio = disparo &nbsp;|&nbsp; Q = mina &nbsp;|&nbsp; Click = turbo
       </div>
       <button id="fireBtn" class="fire-button">🔥</button>
       <button id="mineBtn" class="mine-button">💣</button>

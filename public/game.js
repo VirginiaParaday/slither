@@ -14,6 +14,8 @@ const deathScreen = document.getElementById('deathScreen');
 const deathMsg    = document.getElementById('deathMsg');
 const ammoOrbs    = document.getElementById('ammoOrbs');
 const ammoCount   = document.getElementById('ammoCount');
+const mineOrbs    = document.getElementById('mineOrbs');
+const mineCount   = document.getElementById('mineCount');
 
 // Game state
 let myId        = null;
@@ -242,6 +244,14 @@ function placeMine() {
   const me = players[myId];
   if (!me || !me.alive) return;
   socket.emit('mine');
+  // Optimistic UI: animate the next loaded orb
+  const orbEls = mineOrbs.querySelectorAll('.mine-orb.loaded');
+  if (orbEls.length > 0) {
+    const last = orbEls[orbEls.length - 1];
+    last.classList.remove('loaded');
+    last.classList.add('placing');
+    setTimeout(() => last.classList.remove('placing'), 350);
+  }
 }
 
 // ── Lobby ─────────────────────────────────────────────────────────
@@ -289,6 +299,7 @@ socket.on('tick', data => {
   }
   leaderboard=data.leaderboard;
   updateAmmoBar();
+  updateMineBar();
 });
 
 socket.on('fireballSpawned', fb => { fireballs[fb.id]=fb; });
@@ -327,6 +338,32 @@ function updateAmmoBar() {
   const orbs = ammoOrbs.querySelectorAll('.ammo-orb');
   orbs.forEach((orb, i) => {
     if (i < ammo) orb.classList.add('loaded');
+    else          orb.classList.remove('loaded');
+  });
+}
+
+// ── Mine bar UI ───────────────────────────────────────────────────
+function buildMineOrbs(max) {
+  mineOrbs.innerHTML='';
+  for (let i=0; i<max; i++) {
+    const orb = document.createElement('div');
+    orb.className='mine-orb';
+    mineOrbs.appendChild(orb);
+  }
+}
+
+let lastMines = -1;
+function updateMineBar() {
+  const me = players[myId];
+  if (!me) return;
+  const mines = me.mines ?? 3, max = me.maxMines ?? 3;
+  if (mineOrbs.children.length !== max) buildMineOrbs(max);
+  if (mines === lastMines) return;
+  lastMines = mines;
+  mineCount.textContent = `${mines}/${max}`;
+  const orbs = mineOrbs.querySelectorAll('.mine-orb');
+  orbs.forEach((orb, i) => {
+    if (i < mines) orb.classList.add('loaded');
     else          orb.classList.remove('loaded');
   });
 }
