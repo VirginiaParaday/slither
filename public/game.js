@@ -187,11 +187,11 @@ const keys = {};
 window.addEventListener('keydown', e => {
   if (keys[e.key]) return;   // prevent repeat
   keys[e.key] = true;
-  if (e.key === ' ') {
+  if (e.key === 'q' || e.key === 'Q') {
     e.preventDefault();
     shootFireball();
   }
-  if (e.key === 'q' || e.key === 'Q') {
+  if (e.key === 'w' || e.key === 'W') {
     e.preventDefault();
     placeMine();
   }
