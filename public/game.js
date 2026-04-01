@@ -27,6 +27,7 @@ let apples      = [];     // incoming list of apples
 let greenApples = [];     // incoming list of green apples
 let portals     = [];     // incoming list of portals
 let puddles     = [];     // incoming list of puddles
+let larvas      = [];     // incoming list of larvae
 let hitEffects  = [];     // visual-only explosion particles
 let worldW      = 3000;
 let worldH      = 3000;
@@ -278,6 +279,7 @@ socket.on('init', data => {
   greenApples=data.greenApples||[];
   portals=data.portals||[];
   puddles=data.puddles||[];
+  larvas=data.larvas||[];
   requestAnimationFrame(loop);
 });
 
@@ -311,6 +313,7 @@ socket.on('tick', data => {
   greenApples=data.greenApples||[];
   portals=data.portals||[];
   puddles=data.puddles||[];
+  larvas=data.larvas||[];
   leaderboard=data.leaderboard;
   updateAmmoBar();
   updateMineBar();
@@ -616,6 +619,30 @@ function drawPuddle(p) {
   ctx.restore();
 }
 
+function drawLarva(L) {
+  if (!isVisible(L.x, L.y, 20)) return;
+  const {x, y} = worldToScreen(L.x, L.y);
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(L.angle);
+  
+  const wiggle = Math.sin(Date.now() * 0.015 + L.id) * 3;
+  ctx.fillStyle = '#ffecb3';
+  ctx.shadowBlur = 5; ctx.shadowColor = '#ffb300';
+  
+  ctx.beginPath(); ctx.arc(-8, -wiggle, 4, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(-4, -wiggle*0.5, 5, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, wiggle*0.5, 6, 0, Math.PI*2); ctx.fill();
+  
+  ctx.beginPath(); ctx.arc(5, wiggle, 7, 0, Math.PI*2); ctx.fill();
+  
+  ctx.fillStyle = '#000'; ctx.shadowBlur = 0;
+  ctx.beginPath(); ctx.arc(7, wiggle - 2.5, 1.5, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(7, wiggle + 2.5, 1.5, 0, Math.PI*2); ctx.fill();
+
+  ctx.restore();
+}
+
 // ── Fireball drawing ──────────────────────────────────────────────
 function drawFireball(fb) {
   if (!isVisible(fb.x, fb.y, 30)) return;
@@ -878,6 +905,9 @@ function loop() {
 
   // Puddles
   for (const pud of puddles) drawPuddle(pud);
+
+  // Larvae
+  for (const L of larvas) drawLarva(L);
 
   // Snakes
   for (const pid in players) { if (pid!==myId) drawSnake(players[pid]); }

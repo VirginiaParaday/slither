@@ -43,6 +43,12 @@ const PUDDLE_RADIUS = 60;
 const PUDDLE_LIFETIME = 600;
 const PUDDLE_SLOW_TIME = 300;
 
+// Larva constants
+const LARVA_COUNT = 15;
+const LARVA_RADIUS = 10;
+const LARVA_SPEED = 1.2;
+const LARVA_VALUE = 5;
+
 // Fireball constants
 const FIREBALL_SPEED = 9;      // px/tick
 const FIREBALL_RADIUS = 10;
@@ -66,6 +72,7 @@ const apples = {};   // { [id]: Apple }
 const greenApples = {}; // { [id]: GreenApple }
 const portals = {}; // { [id]: Portal }
 const puddles = {}; // { [id]: Puddle }
+const larvas = {};  // { [id]: Larva }
 let foodId = 0;
 let fireballId = 0;
 let mineId = 0;
@@ -73,6 +80,7 @@ let appleId = 0;
 let greenAppleId = 0;
 let portalId = 0;
 let puddleId = 0;
+let larvaId = 0;
 
 // ── Helpers ──────────────────────────────────────────────────────
 const rand = (min, max) => Math.random() * (max - min) + min;
@@ -131,12 +139,22 @@ function spawnPuddle() {
     life: PUDDLE_LIFETIME + rand(-30, 30)
   };
 }
+function spawnLarva() {
+  const id = larvaId++;
+  larvas[id] = {
+    id,
+    x: rand(100, WORLD_WIDTH - 100),
+    y: rand(100, WORLD_HEIGHT - 100),
+    angle: rand(0, Math.PI * 2)
+  };
+}
 function initFood() {
   for (let i = 0; i < FOOD_COUNT; i++) spawnFood(foodId++);
   for (let i = 0; i < APPLE_COUNT; i++) spawnApple();
   for (let i = 0; i < GREEN_APPLE_COUNT; i++) spawnGreenApple();
   for (let i = 0; i < PORTAL_COUNT; i++) spawnPortal();
   for (let i = 0; i < PUDDLE_COUNT; i++) spawnPuddle();
+  for (let i = 0; i < LARVA_COUNT; i++) spawnLarva();
 }
 
 function createPlayer(id, name, color, pattern) {
@@ -324,6 +342,26 @@ function gameTick() {
     foodCountCurrent++;
   }
 
+  // ── Larva Movement & Spawning ─────────────────────────────────
+  let larvaCountCurrent = 0;
+  for (const lid in larvas) {
+    larvaCountCurrent++;
+    const L = larvas[lid];
+    if (Math.random() < 0.05) L.angle += rand(-0.4, 0.4);
+    L.x += Math.cos(L.angle) * LARVA_SPEED;
+    L.y += Math.sin(L.angle) * LARVA_SPEED;
+    
+    // Bounce walls
+    if (L.x < LARVA_RADIUS) { L.x = LARVA_RADIUS; L.angle = Math.PI - L.angle; }
+    else if (L.x > WORLD_WIDTH - LARVA_RADIUS) { L.x = WORLD_WIDTH - LARVA_RADIUS; L.angle = Math.PI - L.angle; }
+    if (L.y < LARVA_RADIUS) { L.y = LARVA_RADIUS; L.angle = -L.angle; }
+    else if (L.y > WORLD_HEIGHT - LARVA_RADIUS) { L.y = WORLD_HEIGHT - LARVA_RADIUS; L.angle = -L.angle; }
+  }
+  while (larvaCountCurrent < LARVA_COUNT) {
+    spawnLarva();
+    larvaCountCurrent++;
+  }
+
   // ── Move players ──────────────────────────────────────────────
   for (const pid in players) {
     const p = players[pid];
@@ -459,6 +497,16 @@ function gameTick() {
         if (p.ammo < p.maxAmmo) p.ammo = Math.min(p.maxAmmo, p.ammo + AMMO_PER_FOOD);
         delete foods[fid];
         deltaFood.push({ type: 'remove', id: fid });
+      }
+    }
+    
+    // Eat larvae
+    for (const lid in larvas) {
+      const L = larvas[lid];
+      if (circlesOverlap(head.x, head.y, HEAD_RADIUS, L.x, L.y, LARVA_RADIUS)) {
+        p.score += LARVA_VALUE;
+        p.length += LARVA_VALUE * 2;
+        delete larvas[lid];
       }
     }
   }
@@ -673,7 +721,7 @@ function gameTick() {
     .sort((a, b) => b.score - a.score).slice(0, 10)
     .map(p => ({ id: p.id, name: p.name, score: Math.floor(p.score), color: p.color, alive: p.alive }));
 
-  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits, apples: Object.values(apples), shieldHits, greenApples: Object.values(greenApples), portals: Object.values(portals), puddles: Object.values(puddles) });
+  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits, apples: Object.values(apples), shieldHits, greenApples: Object.values(greenApples), portals: Object.values(portals), puddles: Object.values(puddles), larvas: Object.values(larvas) });
 
   for (const d of deaths) io.to(d.id).emit('died', { killedBy: d.killedBy });
 }
@@ -694,6 +742,7 @@ io.on('connection', socket => {
       greenApples: Object.values(greenApples),
       portals: Object.values(portals),
       puddles: Object.values(puddles),
+      larvas: Object.values(larvas),
       worldWidth: WORLD_WIDTH,
       worldHeight: WORLD_HEIGHT
     });
