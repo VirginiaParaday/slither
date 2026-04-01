@@ -123,6 +123,7 @@ let slugId = 0;
 let wormId = 0;
 let antId = 0;
 let staticChanged = true; // Force first update
+const BOSS_ID = 'boss_devorador';
 
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -270,9 +271,8 @@ function createPlayer(id, name, color, pattern) {
 }
 
 function spawnNpc() {
-  const npcId = 'npc_' + Date.now();
-  players[npcId] = createPlayer(npcId, 'El Devorador', '#8b0000', 'spiky');
-  const npc = players[npcId];
+  players[BOSS_ID] = createPlayer(BOSS_ID, 'El Devorador', '#8b0000', 'spiky');
+  const npc = players[BOSS_ID];
   npc.isNpc = true;
   npc.length = 10;
   npc.score = 0;
