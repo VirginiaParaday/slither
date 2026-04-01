@@ -278,6 +278,10 @@ function joinGame() {
 }
 
 // ── Socket events ─────────────────────────────────────────────────
+socket.on('playerJoined', raw => {
+  const { id, name } = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  console.log('🚀 Jugador unido:', name);
+});
 socket.on('connect', () => console.log('✅ Socket conectado:', socket.id));
 socket.on('connect_error', (err) => console.error('❌ Socket error:', err));
 
@@ -431,16 +435,29 @@ socket.on('tick', raw => {
   }
 });
 
-socket.on('fireballSpawned', fb => { fireballs[fb.id]=fb; });
-socket.on('mineSpawned', m => { mines[m.id]=m; });
-socket.on('playerLeft', ({ id }) => { delete players[id]; });
-socket.on('died', ({ killedBy }) => {
-  const killer=players[killedBy];
-  deathMsg.textContent=killer ? `Te eliminó ${killer.name}.` : 'Chocaste con el borde del escenario.';
-  deathScreen.classList.add('show');
+socket.on('fireballSpawned', raw => { 
+  const fb = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  fireballs[fb.id]=fb; 
 });
-socket.on('respawned', ({ player }) => {
-  players[myId]=player; deathScreen.classList.remove('show'); updateAmmoBar(); updateMineBar();
+socket.on('mineSpawned', raw => { 
+  const m = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  mines[m.id]=m; 
+});
+socket.on('playerLeft', raw => { 
+  const { id } = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  delete players[id]; 
+});
+socket.on('died', raw => {
+  const { killedBy } = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  const killer=players[killedBy];
+  if (deathMsg) deathMsg.textContent=killer ? `Te eliminó ${killer.name}.` : 'Chocaste con el borde del escenario o un obstáculo.';
+  if (deathScreen) deathScreen.classList.add('show');
+});
+socket.on('respawned', raw => {
+  const { player } = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  players[myId]=player; 
+  if (deathScreen) deathScreen.classList.remove('show'); 
+  updateAmmoBar(); updateMineBar();
 });
 document.getElementById('respawnBtn').addEventListener('click', () => {
   const msg = JSON.stringify({ color: selectedColor, pattern: selectedPattern });
