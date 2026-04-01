@@ -321,7 +321,7 @@ socket.on('tick', data => {
     } else if (pu.head) {
       const segs = players[pid].segments || [];
       // If snake moved, unshift new head
-      if (segs.length === 0 || (segs[0].x !== pu.head.x || segs[0].y !== pu.head.y)) {
+      if (segs.length === 0 || (pu.head && (segs[0].x !== pu.head.x || segs[0].y !== pu.head.y))) {
         segs.unshift(pu.head);
         while (segs.length > (pu.len || 1)) segs.pop();
       }
@@ -364,15 +364,15 @@ socket.on('tick', data => {
      const newWorms = [];
      for (const wu of data.worms) {
        let oldWorm = worms.find(w => w.id === wu.id);
-       if (!oldWorm || wu.segments) {
+       if (!oldWorm || wu.segs) {
          newWorms.push(wu);
        } else {
-         const segs = oldWorm.segments || [];
-         if (segs.length === 0 || (segs[0].x !== wu.head.x || segs[0].y !== wu.head.y)) {
+         const segs = oldWorm.segs || [];
+         if (segs.length === 0 || (wu.head && (segs[0].x !== wu.head.x || segs[0].y !== wu.head.y))) {
            segs.unshift(wu.head);
            while (segs.length > (wu.len || 1)) segs.pop();
          }
-         oldWorm.segments = segs;
+         oldWorm.segs = segs;
          oldWorm.angle = wu.angle;
          newWorms.push(oldWorm);
        }
@@ -1078,11 +1078,11 @@ function loop() {
   const me=players[myId];
   if (me?.alive && me.segments?.length){
     const h=me.segments[0];
-    if (h && typeof h.x === 'number' && typeof h.y === 'number') {
+    if (h && typeof h.x === 'number' && typeof h.y === 'number' && !isNaN(h.x) && !isNaN(h.y)) {
       const targetX = h.x;
       const targetY = h.y;
-      if (isNaN(cameraX)) cameraX = targetX;
-      if (isNaN(cameraY)) cameraY = targetY;
+      if (isNaN(cameraX) || cameraX === 0) cameraX = targetX;
+      if (isNaN(cameraY) || cameraY === 0) cameraY = targetY;
       cameraX += (targetX - cameraX) * 0.1;
       cameraY += (targetY - cameraY) * 0.1;
     }
