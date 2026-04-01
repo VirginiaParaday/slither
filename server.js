@@ -2,7 +2,6 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
-const compression = require('compression');
 
 const app = express();
 const server = http.createServer(app);
@@ -15,11 +14,7 @@ const io = new Server(server, {
 });
 
 // Middleware
-app.use(compression()); // gzip all responses
-app.use(express.static(path.join(__dirname, 'public'), {
-  maxAge: '1m', // cache static files 1 minute
-  etag: true
-}));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Constants ────────────────────────────────────────────────────
 const WORLD_WIDTH = 3000;
