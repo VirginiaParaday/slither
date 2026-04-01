@@ -1,0 +1,525 @@
+// ── game.js ──────────────────────────────────────────────────────
+const socket = io();
+
+// DOM
+const lobby       = document.getElementById('lobby');
+const hud         = document.getElementById('hud');
+const canvas      = document.getElementById('gameCanvas');
+const ctx         = canvas.getContext('2d');
+const minimapEl   = document.getElementById('minimap');
+const mmCtx       = minimapEl.getContext('2d');
+const lbRows      = document.getElementById('lbRows');
+const scoreVal    = document.getElementById('scoreVal');
+const deathScreen = document.getElementById('deathScreen');
+const deathMsg    = document.getElementById('deathMsg');
+const ammoOrbs    = document.getElementById('ammoOrbs');
+const ammoCount   = document.getElementById('ammoCount');
+
+// Game state
+let myId        = null;
+let players     = {};
+let foods       = {};
+let fireballs   = {};     // { [id]: {id,x,y,angle,life,color,ownerId} }
+let hitEffects  = [];     // visual-only explosion particles
+let worldW      = 3000;
+let worldH      = 3000;
+let cameraX     = 0;
+let cameraY     = 0;
+let mouse       = { x: 0, y: 0 };
+let boosting    = false;
+let leaderboard = [];
+let lastSent    = { angle: 0, boosting: false };
+let lastAmmo    = -1;
+
+// ── SKIN SYSTEM ────────────────────────────────────────────────────
+const SKIN_COLORS = [
+  '#FF6B6B','#FF9F43','#FECA57','#54A0FF','#5F27CD',
+  '#00D2D3','#1DD1A1','#FF9FF3','#C44569','#48DBFB',
+  '#EE5A24','#009432','#F8B739','#0652DD','#9980FA',
+  '#ED4C67','#A3CB38','#1289A7','#C4E538','#ffffff'
+];
+const PATTERNS = [
+  { id: 'solid',    label: 'Sólido'    },
+  { id: 'gradient', label: 'Degradado' },
+  { id: 'stripes',  label: 'Rayas'     },
+  { id: 'dots',     label: 'Puntos'    },
+  { id: 'rainbow',  label: 'Arcoíris'  },
+  { id: 'neon',     label: 'Neón'      },
+  { id: 'camo',     label: 'Camo'      },
+  { id: 'gold',     label: 'Oro'       },
+];
+let selectedColor   = SKIN_COLORS[0];
+let selectedPattern = 'solid';
+
+// Build color swatches
+const colorGrid = document.getElementById('colorGrid');
+SKIN_COLORS.forEach(c => {
+  const sw = document.createElement('div');
+  sw.className = 'color-swatch' + (c === selectedColor ? ' selected' : '');
+  sw.style.background = c;
+  if (c === '#ffffff') sw.style.border = '3px solid #888';
+  sw.addEventListener('click', () => {
+    document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+    sw.classList.add('selected');
+    selectedColor = c;
+    drawPreview(); drawPatternPreviews();
+  });
+  colorGrid.appendChild(sw);
+});
+
+const patternGrid = document.getElementById('patternGrid');
+PATTERNS.forEach(p => {
+  const btn = document.createElement('div');
+  btn.className = 'pattern-btn' + (p.id === selectedPattern ? ' selected' : '');
+  btn.dataset.id = p.id;
+  const miniC = document.createElement('canvas');
+  miniC.width = 54; miniC.height = 32;
+  btn.appendChild(miniC);
+  const lbl = document.createElement('span');
+  lbl.textContent = p.label;
+  btn.appendChild(lbl);
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.pattern-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    selectedPattern = p.id;
+    drawPatternPreviews(); drawPreview();
+  });
+  patternGrid.appendChild(btn);
+});
+
+function drawPatternPreviews() {
+  document.querySelectorAll('.pattern-btn').forEach(btn => {
+    const pid = btn.dataset.id;
+    const miniC = btn.querySelector('canvas');
+    const mCtx = miniC.getContext('2d');
+    mCtx.clearRect(0, 0, 54, 32);
+    for (let i = 3; i >= 0; i--) {
+      const cx2=8+i*12, cy2=16, r=9;
+      mCtx.shadowBlur=0;
+      applySegmentStyle(mCtx, pid, selectedColor, i, 4, cx2, cy2, r, false);
+      mCtx.beginPath(); mCtx.arc(cx2,cy2,r,0,Math.PI*2); mCtx.fill();
+      if (pid==='neon') mCtx.stroke();
+      mCtx.shadowBlur=0;
+    }
+  });
+}
+
+const previewCanvas = document.getElementById('skinPreview');
+const pCtx = previewCanvas.getContext('2d');
+function drawPreview() {
+  pCtx.clearRect(0, 0, 220, 56);
+  for (let i=9; i>=0; i--) {
+    const cx2=20+i*18, cy2=28, r=i===0?11:9;
+    pCtx.shadowBlur=0;
+    applySegmentStyle(pCtx, selectedPattern, selectedColor, i, 10, cx2, cy2, r, i===0);
+    pCtx.beginPath(); pCtx.arc(cx2,cy2,r,0,Math.PI*2); pCtx.fill();
+    if (selectedPattern==='neon') pCtx.stroke();
+    pCtx.shadowBlur=0;
+    drawSegmentOverlay(pCtx, selectedPattern, selectedColor, cx2, cy2, r, i);
+    if (i===0) {
+      for (const s of [-1,1]) {
+        pCtx.beginPath(); pCtx.arc(cx2-2+s*4, cy2-2, 3, 0, Math.PI*2); pCtx.fillStyle='#fff'; pCtx.fill();
+        pCtx.beginPath(); pCtx.arc(cx2-2+s*4+.5, cy2-1.5, 1.5, 0, Math.PI*2); pCtx.fillStyle='#222'; pCtx.fill();
+      }
+    }
+  }
+  drawPatternPreviews();
+}
+drawPreview();
+
+// ── Skin renderer ─────────────────────────────────────────────────
+function applySegmentStyle(c, pattern, color, segIndex, totalSegs, cx2, cy2, r, isHead) {
+  switch (pattern) {
+    case 'solid':
+      c.fillStyle = adjustBrightness(color, isHead ? 120 : 80 + (1-segIndex/totalSegs)*20); break;
+    case 'gradient': {
+      const g=c.createRadialGradient(cx2-r*.3,cy2-r*.3,0,cx2,cy2,r);
+      g.addColorStop(0,lightenColor(color,60)); g.addColorStop(1,darkenColor(color,40));
+      c.fillStyle=g; break;
+    }
+    case 'stripes':
+      c.fillStyle = Math.floor(segIndex/3)%2===0 ? adjustBrightness(color,100) : darkenColor(color,50); break;
+    case 'dots':
+      c.fillStyle = adjustBrightness(color,90); break;
+    case 'rainbow':
+      c.fillStyle = `hsl(${(segIndex*15)%360},90%,${isHead?65:55}%)`; break;
+    case 'neon':
+      c.fillStyle=darkenColor(color,70); c.strokeStyle=adjustBrightness(color,110);
+      c.lineWidth=2.5; c.shadowBlur=14; c.shadowColor=color; break;
+    case 'camo': {
+      const sh=[darkenColor(color,60),darkenColor(color,40),adjustBrightness(color,80),darkenColor(color,20)];
+      c.fillStyle=sh[segIndex%4]; break;
+    }
+    case 'gold': {
+      const gold=['#FFD700','#FFA500','#FFD700','#FFEC8B','#DAA520','#FFD700','#FFA500','#FFEC8B'];
+      c.fillStyle=gold[segIndex%8]; c.shadowBlur=isHead?12:4; c.shadowColor='#FFD70088'; break;
+    }
+    default: c.fillStyle=color;
+  }
+}
+function drawSegmentOverlay(c, pattern, color, cx2, cy2, r, si) {
+  if (pattern==='dots' && si%4===0) {
+    c.save(); c.fillStyle=lightenColor(color,80); c.globalAlpha=.5;
+    c.beginPath(); c.arc(cx2-r*.25,cy2-r*.25,r*.28,0,Math.PI*2); c.fill(); c.restore();
+  }
+  if (pattern==='gradient') {
+    c.save(); c.globalAlpha=.18; c.fillStyle='#ffffff';
+    c.beginPath(); c.ellipse(cx2-r*.3,cy2-r*.35,r*.45,r*.25,-Math.PI/4,0,Math.PI*2); c.fill(); c.restore();
+  }
+}
+
+// ── Resize ────────────────────────────────────────────────────────
+function resize() { canvas.width=window.innerWidth; canvas.height=window.innerHeight; }
+window.addEventListener('resize', resize); resize();
+
+// ── Input ─────────────────────────────────────────────────────────
+window.addEventListener('mousemove', e => { mouse.x=e.clientX; mouse.y=e.clientY; });
+window.addEventListener('touchmove', e => { e.preventDefault(); mouse.x=e.touches[0].clientX; mouse.y=e.touches[0].clientY; }, { passive:false });
+window.addEventListener('mousedown',  () => { boosting=true;  });
+window.addEventListener('mouseup',    () => { boosting=false; });
+window.addEventListener('touchstart', () => { boosting=true;  });
+window.addEventListener('touchend',   () => { boosting=false; });
+
+const keys = {};
+window.addEventListener('keydown', e => {
+  if (keys[e.key]) return;   // prevent repeat
+  keys[e.key] = true;
+  if (e.key === ' ') {
+    e.preventDefault();
+    shootFireball();
+  }
+});
+window.addEventListener('keyup', e => { keys[e.key]=false; });
+
+// ── Fireball shooting ─────────────────────────────────────────────
+function shootFireball() {
+  const me = players[myId];
+  if (!me || !me.alive || me.ammo <= 0) return;
+  socket.emit('fireball');
+  // Optimistic UI: animate the next loaded orb
+  const orbEls = ammoOrbs.querySelectorAll('.ammo-orb.loaded');
+  if (orbEls.length > 0) {
+    const last = orbEls[orbEls.length - 1];
+    last.classList.remove('loaded');
+    last.classList.add('firing');
+    setTimeout(() => last.classList.remove('firing'), 350);
+  }
+}
+
+// ── Lobby ─────────────────────────────────────────────────────────
+document.getElementById('playBtn').addEventListener('click', joinGame);
+document.getElementById('nickname').addEventListener('keydown', e => { if (e.key==='Enter') joinGame(); });
+function joinGame() {
+  const name = document.getElementById('nickname').value.trim() || 'Snake';
+  lobby.style.display='none'; hud.style.display='block';
+  socket.emit('join', { name, color: selectedColor, pattern: selectedPattern });
+}
+
+// ── Socket events ─────────────────────────────────────────────────
+socket.on('init', data => {
+  myId=data.id; worldW=data.worldWidth; worldH=data.worldHeight;
+  foods={}; data.foods.forEach(f => { foods[f.id]=f; });
+  players={}; data.players.forEach(p => { players[p.id]=p; });
+  fireballs={}; (data.fireballs||[]).forEach(fb => { fireballs[fb.id]=fb; });
+  requestAnimationFrame(loop);
+});
+
+socket.on('tick', data => {
+  for (const pid in data.players) players[pid]=data.players[pid];
+  for (const fc of data.foodChanges) {
+    if (fc.type==='add')    foods[fc.food.id]=fc.food;
+    if (fc.type==='remove') delete foods[fc.id];
+  }
+  // Apply fireball delta
+  for (const fd of (data.fbDelta||[])) {
+    if (fd.type==='update') fireballs[fd.fb.id]=fd.fb;
+    if (fd.type==='remove') delete fireballs[fd.id];
+  }
+  // Spawn hit effects
+  for (const hit of (data.fbHits||[])) {
+    spawnExplosion(hit.x, hit.y, players[hit.targetId]?.color || '#ff6b00');
+  }
+  leaderboard=data.leaderboard;
+  updateAmmoBar();
+});
+
+socket.on('fireballSpawned', fb => { fireballs[fb.id]=fb; });
+socket.on('playerLeft', ({ id }) => { delete players[id]; });
+socket.on('died', ({ killedBy }) => {
+  const killer=players[killedBy];
+  deathMsg.textContent=killer ? `Te eliminó ${killer.name}.` : 'Chocaste con el borde del escenario.';
+  deathScreen.classList.add('show');
+});
+socket.on('respawned', ({ player }) => {
+  players[myId]=player; deathScreen.classList.remove('show'); updateAmmoBar();
+});
+document.getElementById('respawnBtn').addEventListener('click', () => {
+  socket.emit('respawn', { color: selectedColor, pattern: selectedPattern });
+});
+
+// ── Ammo bar UI ───────────────────────────────────────────────────
+function buildAmmoOrbs(max) {
+  ammoOrbs.innerHTML='';
+  for (let i=0; i<max; i++) {
+    const orb = document.createElement('div');
+    orb.className='ammo-orb';
+    ammoOrbs.appendChild(orb);
+  }
+}
+
+function updateAmmoBar() {
+  const me = players[myId];
+  if (!me) return;
+  const ammo = me.ammo ?? 5, max = me.maxAmmo ?? 5;
+  if (ammoOrbs.children.length !== max) buildAmmoOrbs(max);
+  if (ammo === lastAmmo) return;
+  lastAmmo = ammo;
+  ammoCount.textContent = `${ammo}/${max}`;
+  const orbs = ammoOrbs.querySelectorAll('.ammo-orb');
+  orbs.forEach((orb, i) => {
+    if (i < ammo) orb.classList.add('loaded');
+    else          orb.classList.remove('loaded');
+  });
+}
+
+// ── Explosion particles ───────────────────────────────────────────
+function spawnExplosion(wx, wy, color) {
+  for (let i=0; i<14; i++) {
+    const angle = (Math.PI*2/14)*i + Math.random()*.3;
+    const speed = 1.5 + Math.random()*3;
+    hitEffects.push({
+      wx, wy, color,
+      vx: Math.cos(angle)*speed,
+      vy: Math.sin(angle)*speed,
+      life: 30 + Math.random()*20,
+      maxLife: 50,
+      r: 2 + Math.random()*3
+    });
+  }
+}
+
+function updateAndDrawEffects() {
+  for (let i = hitEffects.length-1; i >= 0; i--) {
+    const e = hitEffects[i];
+    e.wx   += e.vx; e.wy += e.vy;
+    e.vx   *= 0.88; e.vy *= 0.88;
+    e.life -= 1;
+    if (e.life <= 0) { hitEffects.splice(i,1); continue; }
+    const {x,y} = worldToScreen(e.wx, e.wy);
+    const alpha = e.life / e.maxLife;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.shadowBlur  = 6;
+    ctx.shadowColor = e.color;
+    ctx.fillStyle   = e.color;
+    ctx.beginPath(); ctx.arc(x, y, e.r, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+// ── Input sending ─────────────────────────────────────────────────
+function sendInput() {
+  if (!players[myId]) return;
+  let angle = Math.atan2(mouse.y - canvas.height/2, mouse.x - canvas.width/2);
+  if      (keys['ArrowLeft'])  angle=Math.PI;
+  else if (keys['ArrowRight']) angle=0;
+  else if (keys['ArrowUp'])    angle=-Math.PI/2;
+  else if (keys['ArrowDown'])  angle= Math.PI/2;
+  if (keys['ArrowUp']  &&keys['ArrowRight']) angle=-Math.PI/4;
+  if (keys['ArrowUp']  &&keys['ArrowLeft'])  angle=-3*Math.PI/4;
+  if (keys['ArrowDown']&&keys['ArrowRight']) angle= Math.PI/4;
+  if (keys['ArrowDown']&&keys['ArrowLeft'])  angle= 3*Math.PI/4;
+  if (angle!==lastSent.angle || boosting!==lastSent.boosting) {
+    socket.emit('input', { angle, boosting });
+    lastSent={ angle, boosting };
+  }
+}
+
+// ── Drawing ───────────────────────────────────────────────────────
+function worldToScreen(wx, wy) {
+  return { x: wx-cameraX+canvas.width/2, y: wy-cameraY+canvas.height/2 };
+}
+function isVisible(wx, wy, margin=60) {
+  const {x,y}=worldToScreen(wx,wy);
+  return x>-margin&&x<canvas.width+margin&&y>-margin&&y<canvas.height+margin;
+}
+
+function drawBackground() {
+  ctx.fillStyle='#0d1117'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  const hex=40;
+  ctx.strokeStyle='#161b22'; ctx.lineWidth=0.5;
+  const offX=(-cameraX+canvas.width/2)%(hex*1.5);
+  const offY=(-cameraY+canvas.height/2)%(hex*Math.sqrt(3));
+  ctx.save(); ctx.translate(offX,offY);
+  for (let row=-2;row<canvas.height/(hex*Math.sqrt(3))+2;row++) {
+    for (let col=-2;col<canvas.width/(hex*1.5)+2;col++) {
+      const cx2=col*hex*1.5;
+      const cy2=row*hex*Math.sqrt(3)+(col%2===0?0:hex*Math.sqrt(3)/2);
+      ctx.beginPath();
+      for (let i=0;i<6;i++){const a=Math.PI/180*(60*i-30);i===0?ctx.moveTo(cx2+hex*.92*Math.cos(a),cy2+hex*.92*Math.sin(a)):ctx.lineTo(cx2+hex*.92*Math.cos(a),cy2+hex*.92*Math.sin(a));}
+      ctx.closePath(); ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function drawFood(f) {
+  if (!isVisible(f.x,f.y,20)) return;
+  const {x,y}=worldToScreen(f.x,f.y);
+  ctx.save();
+  ctx.shadowBlur=8; ctx.shadowColor=f.color;
+  ctx.beginPath(); ctx.arc(x,y,f.value>1?7:4.5,0,Math.PI*2);
+  ctx.fillStyle=f.color; ctx.fill();
+  ctx.restore();
+}
+
+// ── Fireball drawing ──────────────────────────────────────────────
+function drawFireball(fb) {
+  if (!isVisible(fb.x, fb.y, 30)) return;
+  const {x,y}=worldToScreen(fb.x, fb.y);
+  const age = 1 - fb.life / 90;   // 0=fresh, 1=expiring
+
+  ctx.save();
+
+  // Trail
+  const trailLen = 5;
+  for (let t=1; t<=trailLen; t++) {
+    const tx = x - Math.cos(fb.angle) * t * 5;
+    const ty = y - Math.sin(fb.angle) * t * 5;
+    ctx.globalAlpha = (1-t/trailLen) * 0.4;
+    ctx.fillStyle = t<3 ? '#ffdd57' : '#ff6b00';
+    ctx.beginPath(); ctx.arc(tx, ty, 6-t, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Outer glow
+  ctx.shadowBlur  = 22;
+  ctx.shadowColor = '#ff6b00';
+
+  // Core gradient
+  const g = ctx.createRadialGradient(x-3, y-3, 0, x, y, 10);
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(0.3, '#ffdd57');
+  g.addColorStop(0.7, '#ff6b00');
+  g.addColorStop(1, 'rgba(200,40,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI*2); ctx.fill();
+
+  // Flicker ring
+  ctx.shadowBlur=0;
+  ctx.strokeStyle = `rgba(255,200,0,${0.6 - age*0.5})`;
+  ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(x, y, 12+Math.sin(Date.now()*0.04)*2, 0, Math.PI*2); ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawSnake(p) {
+  if (!p.alive || !p.segments || p.segments.length<2) return;
+  const segs=p.segments, isMe=p.id===myId;
+  const color=p.color||'#3fb950', pattern=p.pattern||'solid', total=segs.length;
+  ctx.save();
+
+  for (let i=total-1; i>=1; i--) {
+    if (!isVisible(segs[i].x,segs[i].y,30)) continue;
+    const {x,y}=worldToScreen(segs[i].x,segs[i].y);
+    ctx.shadowBlur=0;
+    applySegmentStyle(ctx,pattern,color,i,total,x,y,9,false);
+    ctx.globalAlpha=0.7+(1-i/total)*0.3;
+    ctx.beginPath(); ctx.arc(x,y,9,0,Math.PI*2); ctx.fill();
+    if (pattern==='neon') ctx.stroke();
+    ctx.shadowBlur=0; ctx.globalAlpha=1;
+    drawSegmentOverlay(ctx,pattern,color,x,y,9,i);
+  }
+
+  const head=segs[0];
+  if (isVisible(head.x,head.y)) {
+    const {x:hx,y:hy}=worldToScreen(head.x,head.y);
+    if (p.boosting){ctx.shadowBlur=20;ctx.shadowColor=color;}
+    applySegmentStyle(ctx,pattern,color,0,total,hx,hy,11,true);
+    ctx.beginPath(); ctx.arc(hx,hy,11,0,Math.PI*2); ctx.fill();
+    if (pattern==='neon') ctx.stroke();
+    ctx.shadowBlur=0;
+    drawSegmentOverlay(ctx,pattern,color,hx,hy,11,0);
+
+    const ea=Math.atan2(segs[0].y-segs[1].y,segs[0].x-segs[1].x);
+    const px2=Math.cos(ea+Math.PI/2)*4.5, py2=Math.sin(ea+Math.PI/2)*4.5;
+    const fx=Math.cos(ea)*3, fy=Math.sin(ea)*3;
+    for (const s of [-1,1]) {
+      const ex=hx+px2*s+fx, ey=hy+py2*s+fy;
+      ctx.beginPath(); ctx.arc(ex,ey,3,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.fill();
+      ctx.beginPath(); ctx.arc(ex+.5,ey+.5,1.5,0,Math.PI*2); ctx.fillStyle='#111'; ctx.fill();
+    }
+
+    ctx.font='bold 12px Nunito,sans-serif';
+    ctx.fillStyle=isMe?'#3fb950':'#e6edf3';
+    ctx.textAlign='center';
+    ctx.shadowBlur=4; ctx.shadowColor='#00000090';
+    ctx.fillText(p.name,hx,hy+24);
+    ctx.shadowBlur=0;
+  }
+  ctx.restore();
+}
+
+// ── Color utils ───────────────────────────────────────────────────
+function hexToRgb(hex){const m=hex.replace('#','').match(/.{2}/g);return m?m.map(x=>parseInt(x,16)):[128,128,128];}
+function adjustBrightness(hex,pct){const[r,g,b]=hexToRgb(hex),f=pct/100;return `rgb(${Math.round(r*f)},${Math.round(g*f)},${Math.round(b*f)})`;}
+function lightenColor(hex,amt=40){const[r,g,b]=hexToRgb(hex);return `rgb(${Math.min(255,r+amt)},${Math.min(255,g+amt)},${Math.min(255,b+amt)})`;}
+function darkenColor(hex,pct){const[r,g,b]=hexToRgb(hex),f=1-pct/100;return `rgb(${Math.round(r*f)},${Math.round(g*f)},${Math.round(b*f)})`;}
+
+// ── Minimap ───────────────────────────────────────────────────────
+function drawMinimap() {
+  const W=minimapEl.width=130,H=minimapEl.height=130;
+  const sx=W/worldW,sy=H/worldH;
+  mmCtx.clearRect(0,0,W,H);
+  mmCtx.fillStyle='rgba(0,0,0,.8)'; mmCtx.fillRect(0,0,W,H);
+  for (const fid in foods){const f=foods[fid];mmCtx.fillStyle=f.color;mmCtx.fillRect(f.x*sx,f.y*sy,1.5,1.5);}
+  for (const pid in players){const p=players[pid];if(!p.alive||!p.segments?.length)continue;const h=p.segments[0],isMe=pid===myId;mmCtx.beginPath();mmCtx.arc(h.x*sx,h.y*sy,isMe?4:2.5,0,Math.PI*2);mmCtx.fillStyle=isMe?'#3fb950':p.color;mmCtx.fill();}
+  // Fireballs on minimap
+  for (const fbid in fireballs){const fb=fireballs[fbid];mmCtx.fillStyle='#ff6b00';mmCtx.beginPath();mmCtx.arc(fb.x*sx,fb.y*sy,2.5,0,Math.PI*2);mmCtx.fill();}
+  mmCtx.strokeStyle='rgba(255,255,255,.3)';mmCtx.lineWidth=1;
+  mmCtx.strokeRect((cameraX-canvas.width/2)*sx,(cameraY-canvas.height/2)*sy,canvas.width*sx,canvas.height*sy);
+}
+
+// ── Leaderboard ───────────────────────────────────────────────────
+function updateLeaderboard() {
+  lbRows.innerHTML='';
+  leaderboard.forEach((e,i)=>{
+    const row=document.createElement('div');
+    row.className='lb-row'+(e.id===myId?' me':'');
+    row.innerHTML=`<span class="lb-rank">#${i+1}</span><span class="lb-dot" style="background:${e.color}"></span><span class="lb-name">${e.name}</span><span class="lb-score">${e.score}</span>`;
+    lbRows.appendChild(row);
+  });
+  const me=players[myId];
+  if (me) scoreVal.textContent=Math.floor(me.score);
+}
+
+// ── Main loop ─────────────────────────────────────────────────────
+function loop() {
+  sendInput();
+  const me=players[myId];
+  if (me?.alive&&me.segments?.length){
+    const h=me.segments[0];
+    cameraX+=(h.x-cameraX)*.1; cameraY+=(h.y-cameraY)*.1;
+  }
+
+  drawBackground();
+
+  // Food
+  for (const fid in foods) drawFood(foods[fid]);
+
+  // Snakes
+  for (const pid in players) { if (pid!==myId) drawSnake(players[pid]); }
+  if (myId&&players[myId]) drawSnake(players[myId]);
+
+  // Fireballs
+  for (const fbid in fireballs) drawFireball(fireballs[fbid]);
+
+  // Explosion particles
+  updateAndDrawEffects();
+
+  drawMinimap();
+  updateLeaderboard();
+
+  requestAnimationFrame(loop);
+}
