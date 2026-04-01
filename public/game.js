@@ -600,16 +600,27 @@ function drawPuddle(p) {
   const {x, y} = worldToScreen(p.x, p.y);
   ctx.save();
   ctx.translate(x, y);
-  const t = Date.now() * 0.002;
-  ctx.scale(1 + Math.sin(t)*0.05, 1 + Math.cos(t*0.8)*0.05);
 
+  // Lifecycle scale: grow in first 60 ticks, shrink in last 60 ticks
+  const maxLife = 630; // approximate PUDDLE_LIFETIME
+  const age = maxLife - p.life;
+  const growEnd = 60, shrinkStart = maxLife - 60;
+  let lifecycle = 1;
+  if (age < growEnd) lifecycle = age / growEnd;                          // growing
+  else if (p.life < 60) lifecycle = p.life / 60;                        // shrinking
+  lifecycle = Math.max(0.01, Math.min(1, lifecycle));
+
+  const t = Date.now() * 0.002;
+  ctx.scale(lifecycle * (1 + Math.sin(t)*0.05), lifecycle * (1 + Math.cos(t*0.8)*0.05));
+
+  const alpha = lifecycle * 0.4;
   ctx.beginPath();
   ctx.moveTo(0, -60);
   ctx.bezierCurveTo(40, -60, 60, -20, 50, 20);
   ctx.bezierCurveTo(40, 60, -10, 70, -40, 40);
   ctx.bezierCurveTo(-70, 10, -50, -50, 0, -60);
-  ctx.fillStyle = 'rgba(0, 150, 255, 0.4)';
-  ctx.shadowBlur = 10; ctx.shadowColor = 'rgba(0, 150, 255, 0.8)';
+  ctx.fillStyle = `rgba(0, 150, 255, ${alpha})`;
+  ctx.shadowBlur = 10 * lifecycle; ctx.shadowColor = 'rgba(0, 150, 255, 0.8)';
   ctx.fill();
   
   ctx.beginPath();
@@ -617,13 +628,13 @@ function drawPuddle(p) {
   ctx.bezierCurveTo(25, -40, 40, -10, 30, 15);
   ctx.bezierCurveTo(25, 40, -5, 45, -25, 25);
   ctx.bezierCurveTo(-45, 5, -30, -35, 0, -40);
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+  ctx.fillStyle = `rgba(255, 255, 255, ${lifecycle * 0.15})`;
   ctx.shadowBlur = 0;
   ctx.fill();
   
   ctx.beginPath();
   ctx.ellipse(-20, -20, 10, 5, Math.PI/4, 0, Math.PI*2);
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+  ctx.fillStyle = `rgba(255, 255, 255, ${lifecycle * 0.4})`;
   ctx.fill();
   ctx.restore();
 }
