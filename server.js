@@ -245,7 +245,7 @@ function createPlayer(id, name, color, pattern) {
   for (let i = 0; i < 10; i++) segments.push({ x: startX, y: startY + i * SEGMENT_SPACING });
   return {
     id,
-    name: name.slice(0, 20) || 'Snake',
+    name: Array.from(name).slice(0, 15).join(''), // Safe slice for emojis/surrogate pairs
     color: color || randomColor(),
     pattern: pattern || 'solid',
     segments,
