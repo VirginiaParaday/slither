@@ -37,6 +37,12 @@ const PORTAL_COUNT = 10;
 const PORTAL_RADIUS = 35;
 const PORTAL_LIFETIME = 600;
 
+// Puddle constants
+const PUDDLE_COUNT = 8;
+const PUDDLE_RADIUS = 60;
+const PUDDLE_LIFETIME = 600;
+const PUDDLE_SLOW_TIME = 300;
+
 // Fireball constants
 const FIREBALL_SPEED = 9;      // px/tick
 const FIREBALL_RADIUS = 10;
@@ -59,12 +65,14 @@ const mines = {};   // { [id]: Mine }
 const apples = {};   // { [id]: Apple }
 const greenApples = {}; // { [id]: GreenApple }
 const portals = {}; // { [id]: Portal }
+const puddles = {}; // { [id]: Puddle }
 let foodId = 0;
 let fireballId = 0;
 let mineId = 0;
 let appleId = 0;
 let greenAppleId = 0;
 let portalId = 0;
+let puddleId = 0;
 
 // ── Helpers ──────────────────────────────────────────────────────
 const rand = (min, max) => Math.random() * (max - min) + min;
@@ -114,11 +122,21 @@ function spawnPortal() {
     life: PORTAL_LIFETIME + rand(-30, 30) // slight variance so not all pop instantly
   };
 }
+function spawnPuddle() {
+  const id = puddleId++;
+  puddles[id] = {
+    id,
+    x: rand(150, WORLD_WIDTH - 150),
+    y: rand(150, WORLD_HEIGHT - 150),
+    life: PUDDLE_LIFETIME + rand(-30, 30)
+  };
+}
 function initFood() {
   for (let i = 0; i < FOOD_COUNT; i++) spawnFood(foodId++);
   for (let i = 0; i < APPLE_COUNT; i++) spawnApple();
   for (let i = 0; i < GREEN_APPLE_COUNT; i++) spawnGreenApple();
   for (let i = 0; i < PORTAL_COUNT; i++) spawnPortal();
+  for (let i = 0; i < PUDDLE_COUNT; i++) spawnPuddle();
 }
 
 function createPlayer(id, name, color, pattern) {
@@ -148,7 +166,8 @@ function createPlayer(id, name, color, pattern) {
     portalCooldown: 0,
     entrancePortal: -1,
     exitPortal: -1,
-    isNpc: false
+    isNpc: false,
+    slow: 0
   };
 }
 
@@ -204,6 +223,21 @@ function gameTick() {
   while (portalCountCurrent < PORTAL_COUNT) {
     spawnPortal();
     portalCountCurrent++;
+  }
+
+  // ── Puddle expiration ───────────────────────────────────────────
+  let puddleCountCurrent = 0;
+  for (const pid in puddles) {
+    puddleCountCurrent++;
+    puddles[pid].life--;
+    if (puddles[pid].life <= 0) {
+      delete puddles[pid];
+      puddleCountCurrent--;
+    }
+  }
+  while (puddleCountCurrent < PUDDLE_COUNT) {
+    spawnPuddle();
+    puddleCountCurrent++;
   }
 
   // ── NPC Spawning & AI ──────────────────────────────────────────
@@ -300,8 +334,19 @@ function gameTick() {
     while (diff < -Math.PI) diff += 2 * Math.PI;
     p.angle += Math.sign(diff) * Math.min(Math.abs(diff), 0.10);
 
-    const speed = (p.boosting && p.length > 10) ? BOOST_SPEED : SNAKE_SPEED;
     const head = p.segments[0];
+
+    if (p.slow > 0) p.slow--;
+    for (const pid in puddles) {
+      if (circlesOverlap(head.x, head.y, HEAD_RADIUS, puddles[pid].x, puddles[pid].y, PUDDLE_RADIUS)) {
+        p.slow = PUDDLE_SLOW_TIME;
+        break;
+      }
+    }
+
+    let speed = (p.boosting && p.length > 10) ? BOOST_SPEED : SNAKE_SPEED;
+    if (p.slow > 0) speed *= 0.5;
+
     let nx = head.x + Math.cos(p.angle) * speed;
     let ny = head.y + Math.sin(p.angle) * speed;
 
@@ -395,6 +440,7 @@ function gameTick() {
       protected: (p.protection > 0),
       lethal: (p.lethal > 0),
       isNpc: p.isNpc,
+      slow: (p.slow > 0),
       segments: p.segments
     };
   }
@@ -627,7 +673,7 @@ function gameTick() {
     .sort((a, b) => b.score - a.score).slice(0, 10)
     .map(p => ({ id: p.id, name: p.name, score: Math.floor(p.score), color: p.color, alive: p.alive }));
 
-  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits, apples: Object.values(apples), shieldHits, greenApples: Object.values(greenApples), portals: Object.values(portals) });
+  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits, apples: Object.values(apples), shieldHits, greenApples: Object.values(greenApples), portals: Object.values(portals), puddles: Object.values(puddles) });
 
   for (const d of deaths) io.to(d.id).emit('died', { killedBy: d.killedBy });
 }
@@ -647,6 +693,7 @@ io.on('connection', socket => {
       apples: Object.values(apples),
       greenApples: Object.values(greenApples),
       portals: Object.values(portals),
+      puddles: Object.values(puddles),
       worldWidth: WORLD_WIDTH,
       worldHeight: WORLD_HEIGHT
     });
