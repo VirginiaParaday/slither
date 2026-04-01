@@ -278,8 +278,12 @@ function joinGame() {
 }
 
 // ── Socket events ─────────────────────────────────────────────────
+socket.on('connect', () => console.log('✅ Socket conectado:', socket.id));
+socket.on('connect_error', (err) => console.error('❌ Socket error:', err));
+
 socket.on('init', data => {
-  myId=data.id; worldW=data.worldWidth; worldH=data.worldHeight;
+  console.log('📦 Init recibido:', data.id);
+  myId=data.id; worldW=data.worldWidth||3000; worldH=data.worldHeight||3000;
   foods={}; data.foods.forEach(f => { foods[f.id]=f; });
   players={}; data.players.forEach(p => { players[p.id]=p; });
   fireballs={}; (data.fireballs||[]).forEach(fb => { fireballs[fb.id]=fb; });
@@ -292,10 +296,16 @@ socket.on('init', data => {
   slugs=data.slugs||[];
   worms=data.worms||[];
   ants=data.ants||[];
+  console.log('🎮 Entidades inicializadas:', { players: data.players.length, food: data.foods.length });
   requestAnimationFrame(loop);
 });
 
+let lastTickLog = 0;
 socket.on('tick', data => {
+  if (Date.now() - lastTickLog > 5000) { 
+    console.log('💓 Tick:', Object.keys(data.players || {}).length, 'jugadores');
+    lastTickLog = Date.now();
+  }
   for (const pid in data.players) players[pid]=data.players[pid];
   for (const fc of data.foodChanges) {
     if (fc.type==='add')    foods[fc.food.id]=fc.food;
@@ -481,6 +491,7 @@ function worldToScreen(wx, wy) {
   return { x: wx-cameraX+canvas.width/2, y: wy-cameraY+canvas.height/2 };
 }
 function isVisible(wx, wy, margin=60) {
+  if (wx === undefined || wy === undefined) return false;
   const {x,y}=worldToScreen(wx,wy);
   return x>-margin&&x<canvas.width+margin&&y>-margin&&y<canvas.height+margin;
 }
@@ -488,9 +499,9 @@ function isVisible(wx, wy, margin=60) {
 function drawBackground() {
   ctx.fillStyle='#0d1117'; ctx.fillRect(0,0,canvas.width,canvas.height);
   const hex=40;
-  ctx.strokeStyle='#161b22'; ctx.lineWidth=0.5;
-  const offX=(-cameraX+canvas.width/2)%(hex*1.5);
-  const offY=(-cameraY+canvas.height/2)%(hex*Math.sqrt(3));
+  ctx.strokeStyle='#1e242c'; ctx.lineWidth=0.7; // Brighter grid
+  const offX=((-(cameraX||0)+canvas.width/2)%(hex*1.5) + (hex*1.5)) % (hex*1.5);
+  const offY=((-(cameraY||0)+canvas.height/2)%(hex*Math.sqrt(3)) + (hex*Math.sqrt(3))) % (hex*Math.sqrt(3));
   ctx.save(); ctx.translate(offX,offY);
   for (let row=-2;row<canvas.height/(hex*Math.sqrt(3))+2;row++) {
     for (let col=-2;col<canvas.width/(hex*1.5)+2;col++) {
@@ -1024,10 +1035,21 @@ function updateLeaderboard() {
 function loop() {
   sendInput();
   const me=players[myId];
-  if (me?.alive&&me.segments?.length){
+  if (me?.alive && me.segments?.length){
     const h=me.segments[0];
-    cameraX+=(h.x-cameraX)*.1; cameraY+=(h.y-cameraY)*.1;
+    if (h && typeof h.x === 'number' && typeof h.y === 'number') {
+      const targetX = h.x;
+      const targetY = h.y;
+      if (isNaN(cameraX)) cameraX = targetX;
+      if (isNaN(cameraY)) cameraY = targetY;
+      cameraX += (targetX - cameraX) * 0.1;
+      cameraY += (targetY - cameraY) * 0.1;
+    }
   }
+  
+  // Final NaN fallback
+  if (isNaN(cameraX)) cameraX = worldW / 2;
+  if (isNaN(cameraY)) cameraY = worldH / 2;
 
   drawBackground();
   drawWorldBorder();
