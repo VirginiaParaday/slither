@@ -273,7 +273,8 @@ document.getElementById('nickname').addEventListener('keydown', e => { if (e.key
 function joinGame() {
   const name = document.getElementById('nickname').value.trim() || 'Snake';
   lobby.style.display='none'; hud.style.display='block';
-  socket.emit('join', { name, color: selectedColor, pattern: selectedPattern });
+  const msg = JSON.stringify({ name, color: selectedColor, pattern: selectedPattern });
+  socket.emit('join', msg);
 }
 
 // ── Socket events ─────────────────────────────────────────────────
@@ -281,8 +282,9 @@ socket.on('connect', () => console.log('✅ Socket conectado:', socket.id));
 socket.on('connect_error', (err) => console.error('❌ Socket error:', err));
 
 let isInitialized = false;
-socket.on('init', data => {
+socket.on('init', raw => {
   if (isInitialized) return;
+  const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
   console.log('📦 Init recibido:', data.id);
   myId = data.id; 
   worldW = data.worldWidth || 3000; 
@@ -331,8 +333,9 @@ socket.on('init', data => {
 });
 
 let lastTickLog = 0;
-socket.on('tick', data => {
+socket.on('tick', raw => {
   try {
+    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
     if (!data) return;
     if (Date.now() - lastTickLog > 5000) { 
       console.log('💓 Tick:', Object.keys(data.players || {}).length, 'jugadores');
@@ -440,7 +443,8 @@ socket.on('respawned', ({ player }) => {
   players[myId]=player; deathScreen.classList.remove('show'); updateAmmoBar(); updateMineBar();
 });
 document.getElementById('respawnBtn').addEventListener('click', () => {
-  socket.emit('respawn', { color: selectedColor, pattern: selectedPattern });
+  const msg = JSON.stringify({ color: selectedColor, pattern: selectedPattern });
+  socket.emit('respawn', msg);
 });
 
 // ── Ammo bar UI ───────────────────────────────────────────────────
@@ -563,9 +567,11 @@ function sendInput() {
   if (keys['ArrowUp']  &&keys['ArrowLeft'])  angle=-3*Math.PI/4;
   if (keys['ArrowDown']&&keys['ArrowRight']) angle= Math.PI/4;
   if (keys['ArrowDown']&&keys['ArrowLeft'])  angle= 3*Math.PI/4;
-  if (angle!==lastSent.angle || boosting!==lastSent.boosting) {
-    socket.emit('input', { angle, boosting });
-    lastSent={ angle, boosting };
+
+  if (angle !== lastSent.angle || boosting !== lastSent.boosting) {
+    const msg = JSON.stringify({ angle, boosting });
+    socket.emit('input', msg);
+    lastSent = { angle, boosting };
   }
 }
 

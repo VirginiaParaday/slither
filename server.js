@@ -278,6 +278,7 @@ function spawnNpc() {
   npc.score = 0;
 }
 
+
 function placeMine(playerId) {
   const p = players[playerId];
   if (!p || !p.alive || p.mineCount >= MAX_MINES) return null;
@@ -991,16 +992,19 @@ function gameTick() {
     staticChanged = false;
   }
 
-  io.emit('tick', tickPacket);
+  // Explicit manual stringification for Tick to avoid binary frame issues in production
+  io.emit('tick', JSON.stringify(tickPacket));
 
-  for (const d of deaths) io.to(d.id).emit('died', { killedBy: d.killedBy });
+  for (const d of deaths) io.to(d.id).emit('died', JSON.stringify({ killedBy: d.killedBy }));
 }
 
 // ── Socket.IO ────────────────────────────────────────────────────
 io.on('connection', socket => {
   console.log('connect', socket.id);
 
-  socket.on('join', ({ name, color, pattern }) => {
+  socket.on('join', raw => {
+    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const { name, color, pattern } = data || {};
     // Deep sanitize name
     const sanitizedName = Array.from(String(name || 'Snake'))
       .filter(char => char.codePointAt(0) > 31) // No control chars
@@ -1018,12 +1022,13 @@ io.on('connection', socket => {
       .slice(0, 200)
       .map(f => [f.id, f.x, f.y, f.v]); // Compact array format [id, x, y, value]
 
-    socket.emit('init', {
+    // Explicit manual stringification for Init
+    socket.emit('init', JSON.stringify({
       id: socket.id,
       foods: foodList, // Compact and subset
       players: Object.values(players).map(p => ({
         id: p.id, name: p.name, color: p.color, pattern: p.pattern, 
-        segments: p.id === socket.id ? p.segments : [p.segments[0]], // Only send full segments for self
+        segments: p.id === socket.id ? p.segments : [p.segments[0]], 
         score: Math.floor(p.score), alive: p.alive, isNpc: p.isNpc
       })),
       worldWidth: WORLD_WIDTH,
@@ -1036,13 +1041,15 @@ io.on('connection', socket => {
       slugs: Object.values(slugs),
       worms: Object.values(worms).map(w => ({ id: w.id, head: w.segs[0], len: w.segs.length, angle: w.angle })),
       ants: Object.values(ants)
-    });
+    }));
     
     console.log(`🚀 Init sent to ${socket.id} (${foodList.length} foods)`);
-    io.emit('playerJoined', { id: socket.id, name: player.name });
+    io.emit('playerJoined', JSON.stringify({ id: socket.id, name: player.name }));
   });
 
-  socket.on('input', ({ angle, boosting }) => {
+  socket.on('input', raw => {
+    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const { angle, boosting } = data || {};
     const p = players[socket.id];
     if (!p || !p.alive) return;
     if (typeof angle === 'number') p.targetAngle = angle;
@@ -1065,7 +1072,7 @@ io.on('connection', socket => {
       life: FIREBALL_LIFETIME
     };
     // Broadcast new fireball to all
-    io.emit('fireballSpawned', fireballs[fbid]);
+    io.emit('fireballSpawned', JSON.stringify(fireballs[fbid]));
   });
 
   socket.on('mine', () => {
@@ -1074,21 +1081,23 @@ io.on('connection', socket => {
     const mine = placeMine(socket.id);
     if (mine) {
       // Broadcast new mine to all
-      io.emit('mineSpawned', mine);
+      io.emit('mineSpawned', JSON.stringify(mine));
     }
   });
 
-  socket.on('respawn', ({ color, pattern } = {}) => {
+  socket.on('respawn', raw => {
+    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const { color, pattern } = data || {};
     const p = players[socket.id];
     if (!p) return;
     players[socket.id] = createPlayer(socket.id, p.name, color || p.color, pattern || p.pattern);
-    socket.emit('respawned', { player: players[socket.id] });
+    socket.emit('respawned', JSON.stringify({ player: players[socket.id] }));
   });
 
   socket.on('disconnect', () => {
-    delete players[socket.id];
-    io.emit('playerLeft', { id: socket.id });
     console.log('disconnect', socket.id);
+    delete players[socket.id];
+    io.emit('playerLeft', JSON.stringify({ id: socket.id }));
   });
 });
 
