@@ -32,6 +32,11 @@ const GREEN_APPLE_COUNT = 3;
 const GREEN_APPLE_LIFETIME = 600;
 const LETHAL_TIME = 250;
 
+// Portal constants
+const PORTAL_COUNT = 10;
+const PORTAL_RADIUS = 35;
+const PORTAL_LIFETIME = 600;
+
 // Fireball constants
 const FIREBALL_SPEED = 9;      // px/tick
 const FIREBALL_RADIUS = 10;
@@ -53,11 +58,13 @@ const fireballs = {};   // { [id]: Fireball }
 const mines = {};   // { [id]: Mine }
 const apples = {};   // { [id]: Apple }
 const greenApples = {}; // { [id]: GreenApple }
+const portals = {}; // { [id]: Portal }
 let foodId = 0;
 let fireballId = 0;
 let mineId = 0;
 let appleId = 0;
 let greenAppleId = 0;
+let portalId = 0;
 
 // ── Helpers ──────────────────────────────────────────────────────
 const rand = (min, max) => Math.random() * (max - min) + min;
@@ -98,10 +105,20 @@ function spawnGreenApple() {
     life: GREEN_APPLE_LIFETIME
   };
 }
+function spawnPortal() {
+  const id = portalId++;
+  portals[id] = {
+    id,
+    x: rand(100, WORLD_WIDTH - 100),
+    y: rand(100, WORLD_HEIGHT - 100),
+    life: PORTAL_LIFETIME + rand(-30, 30) // slight variance so not all pop instantly
+  };
+}
 function initFood() {
   for (let i = 0; i < FOOD_COUNT; i++) spawnFood(foodId++);
   for (let i = 0; i < APPLE_COUNT; i++) spawnApple();
   for (let i = 0; i < GREEN_APPLE_COUNT; i++) spawnGreenApple();
+  for (let i = 0; i < PORTAL_COUNT; i++) spawnPortal();
 }
 
 function createPlayer(id, name, color, pattern) {
@@ -127,7 +144,10 @@ function createPlayer(id, name, color, pattern) {
     maxMines: MAX_MINES,
     mineCount: 0,             // active mines placed by this player
     protection: 0,             // shield ticks remaining
-    lethal: 0                 // lethal ticks remaining
+    lethal: 0,                 // lethal ticks remaining
+    portalCooldown: 0,
+    entrancePortal: -1,
+    exitPortal: -1
   };
 }
 
@@ -160,6 +180,21 @@ function gameTick() {
   const deaths = [];
   const fbHits = [];     // { fbId, targetId }
   const shieldHits = [];     // { x, y }
+
+  // ── Portal expiration ───────────────────────────────────────────
+  let portalCountCurrent = 0;
+  for (const pid in portals) {
+    portalCountCurrent++;
+    portals[pid].life--;
+    if (portals[pid].life <= 0) {
+      delete portals[pid];
+      portalCountCurrent--;
+    }
+  }
+  while (portalCountCurrent < PORTAL_COUNT) {
+    spawnPortal();
+    portalCountCurrent++;
+  }
 
   // ── Green Apple expiration ──────────────────────────────────────
   let greenAppleCountCurrent = 0;
@@ -248,6 +283,51 @@ function gameTick() {
 
     if (p.protection > 0) p.protection--;
     if (p.lethal > 0) p.lethal--;
+    if (p.portalCooldown > 0) p.portalCooldown--;
+
+    // Portal enter logic
+    if (p.portalCooldown <= 0) {
+      const h = p.segments[0];
+      for (const pid2 in portals) {
+        const port = portals[pid2];
+        if (circlesOverlap(h.x, h.y, HEAD_RADIUS, port.x, port.y, PORTAL_RADIUS)) {
+          const others = Object.values(portals).filter(op => op.id !== port.id);
+          if (others.length > 0) {
+            const dest = others[Math.floor(Math.random() * others.length)];
+            h.x = dest.x;
+            h.y = dest.y;
+            p.portalCooldown = 45;
+            p.entrancePortal = port.id;
+            p.exitPortal = dest.id;
+            break;
+          }
+        }
+      }
+    }
+
+    // Traverse check
+    let isTraversing = false;
+    for (let i = 0; i < p.segments.length - 1; i++) {
+      const dx = p.segments[i].x - p.segments[i + 1].x;
+      const dy = p.segments[i].y - p.segments[i + 1].y;
+      if (dx * dx + dy * dy > 40000) {
+        isTraversing = true;
+        break;
+      }
+    }
+
+    if (isTraversing) {
+      if (!portals[p.entrancePortal] || !portals[p.exitPortal]) {
+        p.alive = false;
+        deaths.push({ id: p.id, killedBy: null });
+        for (let k = 0; k < p.segments.length; k += 3) {
+          const fid = foodId++;
+          foods[fid] = { id: fid, x: p.segments[k].x, y: p.segments[k].y, color: p.color, value: 1, life: rand(300, 900) };
+          deltaFood.push({ type: 'add', food: foods[fid] });
+        }
+        continue;
+      }
+    }
 
     if (p.boosting && p.length > 10) {
       p.length -= 0.3;
@@ -477,7 +557,7 @@ function gameTick() {
     .sort((a, b) => b.score - a.score).slice(0, 10)
     .map(p => ({ id: p.id, name: p.name, score: Math.floor(p.score), color: p.color, alive: p.alive }));
 
-  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits, apples: Object.values(apples), shieldHits, greenApples: Object.values(greenApples) });
+  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits, apples: Object.values(apples), shieldHits, greenApples: Object.values(greenApples), portals: Object.values(portals) });
 
   for (const d of deaths) io.to(d.id).emit('died', { killedBy: d.killedBy });
 }
@@ -496,6 +576,7 @@ io.on('connection', socket => {
       mines: Object.values(mines),
       apples: Object.values(apples),
       greenApples: Object.values(greenApples),
+      portals: Object.values(portals),
       worldWidth: WORLD_WIDTH,
       worldHeight: WORLD_HEIGHT
     });
