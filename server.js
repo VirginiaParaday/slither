@@ -1,4 +1,6 @@
 const express = require('express');
+const compression = require('compression');
+
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
@@ -10,10 +12,11 @@ const io = new Server(server, {
   allowEIO3: true,
   pingTimeout: 60000,
   pingInterval: 25000,
-  perMessageDeflate: false // Disable compression to avoid UTF-8 decode errors
+  perMessageDeflate: true // Enabled compression to reduce payload size
 });
 
 // Middleware
+app.use(compression());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Constants ────────────────────────────────────────────────────
@@ -119,6 +122,8 @@ let larvaId = 0;
 let slugId = 0;
 let wormId = 0;
 let antId = 0;
+let staticChanged = true; // Force first update
+
 
 // ── Helpers ──────────────────────────────────────────────────────
 const rand = (min, max) => Math.random() * (max - min) + min;
@@ -311,11 +316,13 @@ function gameTick() {
     if (portals[pid].life <= 0) {
       delete portals[pid];
       portalCountCurrent--;
+      staticChanged = true;
     }
   }
   while (portalCountCurrent < PORTAL_COUNT) {
     spawnPortal();
     portalCountCurrent++;
+    staticChanged = true;
   }
 
   // ── Puddle expiration ───────────────────────────────────────────
@@ -326,11 +333,13 @@ function gameTick() {
     if (puddles[pid].life <= 0) {
       delete puddles[pid];
       puddleCountCurrent--;
+      staticChanged = true;
     }
   }
   while (puddleCountCurrent < PUDDLE_COUNT) {
     spawnPuddle();
     puddleCountCurrent++;
+    staticChanged = true;
   }
 
   // ── NPC Spawning & AI ──────────────────────────────────────────
@@ -372,11 +381,13 @@ function gameTick() {
     if (greenApples[aid].life <= 0) {
       delete greenApples[aid];
       greenAppleCountCurrent--;
+      staticChanged = true;
     }
   }
   while (greenAppleCountCurrent < GREEN_APPLE_COUNT) {
     spawnGreenApple();
     greenAppleCountCurrent++;
+    staticChanged = true;
   }
 
   // ── Apple expiration ──────────────────────────────────────────
@@ -387,11 +398,13 @@ function gameTick() {
     if (apples[aid].life <= 0) {
       delete apples[aid];
       appleCountCurrent--;
+      staticChanged = true;
     }
   }
   while (appleCountCurrent < APPLE_COUNT) {
     spawnApple();
     appleCountCurrent++;
+    staticChanged = true;
   }
 
   // ── Food expiration ───────────────────────────────────────────
@@ -744,6 +757,7 @@ function gameTick() {
         p.protection = PROTECTION_TIME;
         delete apples[aid];
         spawnApple();
+        staticChanged = true;
       }
     }
     for (const gid in greenApples) {
@@ -752,6 +766,7 @@ function gameTick() {
         p.lethal = LETHAL_TIME;
         delete greenApples[gid];
         spawnGreenApple();
+        staticChanged = true;
       }
     }
   }
@@ -943,7 +958,30 @@ function gameTick() {
     .sort((a, b) => b.score - a.score).slice(0, 10)
     .map(p => ({ id: p.id, name: p.name, score: Math.floor(p.score), color: p.color, alive: p.alive }));
 
-  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits, apples: Object.values(apples), shieldHits, greenApples: Object.values(greenApples), portals: Object.values(portals), puddles: Object.values(puddles), larvas: Object.values(larvas), slugs: Object.values(slugs), worms: Object.values(worms), ants: Object.values(ants) });
+  const tickPacket = { 
+    players: deltaPlayers, 
+    foodChanges: deltaFood, 
+    leaderboard, 
+    fbDelta, 
+    fbHits, 
+    mineDelta, 
+    mineHits, 
+    shieldHits, 
+    larvas: Object.values(larvas), 
+    slugs: Object.values(slugs), 
+    worms: Object.values(worms), 
+    ants: Object.values(ants) 
+  };
+  
+  if (staticChanged) {
+    tickPacket.apples = Object.values(apples);
+    tickPacket.greenApples = Object.values(greenApples);
+    tickPacket.portals = Object.values(portals);
+    tickPacket.puddles = Object.values(puddles);
+    staticChanged = false;
+  }
+
+  io.emit('tick', tickPacket);
 
   for (const d of deaths) io.to(d.id).emit('died', { killedBy: d.killedBy });
 }

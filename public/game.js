@@ -330,15 +330,15 @@ socket.on('tick', data => {
   for (const hit of (data.shieldHits||[])) {
     spawnExplosion(hit.x, hit.y, '#00e5ff');
   }
-  apples=data.apples||[];
-  greenApples=data.greenApples||[];
-  portals=data.portals||[];
-  puddles=data.puddles||[];
-  larvas=data.larvas||[];
-  slugs=data.slugs||[];
-  worms=data.worms||[];
-  ants=data.ants||[];
-  leaderboard=data.leaderboard;
+  if (data.apples)      apples = data.apples;
+  if (data.greenApples) greenApples = data.greenApples;
+  if (data.portals)     portals = data.portals;
+  if (data.puddles)     puddles = data.puddles;
+  larvas = data.larvas || [];
+  slugs  = data.slugs || [];
+  worms  = data.worms || [];
+  ants   = data.ants || [];
+  leaderboard = data.leaderboard;
   updateAmmoBar();
   updateMineBar();
   updateBuffUI();
