@@ -587,9 +587,9 @@ function updateArrowBar() {
   const me = players[myId];
   if (!me) return;
   
-  // Visibility: only if score >= 20
-  if (me.score >= 20) {
-    arrowBar.style.display = 'block';
+  // Visibility: only if score >= 50
+  if (me.score >= 50) {
+    arrowBar.style.display = 'flex';
     if (arrowBtn) arrowBtn.style.display = 'flex';
   } else {
     arrowBar.style.display = 'none';

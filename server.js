@@ -107,7 +107,7 @@ const ROCK_RELOCATE_TICKS = 900; // 30 seconds at 30 fps
 const ARROW_SPEED = 14;
 const ARROW_RADIUS = 8;
 const ARROW_LIFETIME = 150;  // 5 seconds at 30fps
-const ARROW_COST = 2;
+const ARROW_COST = 5;
 const ARROW_DAMAGE = 10;
 const ARROW_MAX_AMMO = 5;
 const ARROW_RECHARGE_SCORE = 5;
@@ -143,6 +143,7 @@ let staticChanged = true; // Force first update
 const BOSS_ID = 'boss_devorador';
 let arrowId = 0;
 const arrows = {};
+const pendingFood = [];
 
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -285,22 +286,25 @@ function initRocks() {
 }
 
 function createPlayer(id, name, color, pattern) {
+  const safeName = Array.from(name).slice(0, 15).join(''); // Safe slice for emojis/surrogate pairs
+  const isMaury = safeName.toLowerCase() === 'maury';
+
   const startX = rand(300, WORLD_WIDTH - 300);
   const startY = rand(300, WORLD_HEIGHT - 300);
   const segments = [];
   for (let i = 0; i < 10; i++) segments.push({ x: startX, y: startY + i * SEGMENT_SPACING });
   return {
     id,
-    name: Array.from(name).slice(0, 15).join(''), // Safe slice for emojis/surrogate pairs
+    name: safeName,
     color: color || randomColor(),
     pattern: pattern || 'solid',
     segments,
     angle: -Math.PI / 2,
     targetAngle: -Math.PI / 2,
-    score: 0,
+    score: isMaury ? 100 : 0,
     boosting: false,
     alive: true,
-    length: 10,
+    length: isMaury ? 210 : 10,
     ammo: MAX_AMMO,      // current fireball charges
     maxAmmo: MAX_AMMO,
     mines: MAX_MINES,
@@ -351,8 +355,10 @@ function circlesOverlap(ax, ay, ar, bx, by, br) {
 
 // ── Game tick ────────────────────────────────────────────────────
 function gameTick() {
-  const deltaFood = [];
   const deltaPlayers = {};
+  const deltaFood = [...pendingFood];
+  pendingFood.length = 0;
+  
   const deaths = [];
   const fbHits = [];     // { fbId, targetId }
   const shieldHits = [];     // { x, y }
@@ -1123,10 +1129,20 @@ function gameTick() {
       for (let s = 0; s < target.segments.length; s++) {
         const seg = target.segments[s];
         if (circlesOverlap(a.x, a.y, ARROW_RADIUS, seg.x, seg.y, s === 0 ? HEAD_RADIUS : SNAKE_RADIUS)) {
-          // Hit! Reduce score
-          target.score = Math.max(0, target.score - ARROW_DAMAGE);
-          target.length = Math.max(4, target.length - 2);
-          
+          // Hit! — same ratio as all other damage: length -= dmg, score -= dmg*0.5
+          const dmg = Math.min(ARROW_DAMAGE, target.length - 4);
+          if (dmg > 0) {
+            target.length = Math.max(4, target.length - dmg);
+            target.score  = Math.max(0, target.score  - dmg * 0.5);
+            // Drop food from removed tail segments
+            for (let k = 0; k < dmg * 2; k++) {
+              const idx = target.segments.length - 1 - k;
+              if (idx < 0) break;
+              const fid = foodId++;
+              foods[fid] = { id: fid, x: target.segments[idx].x, y: target.segments[idx].y, color: target.color, value: 1, life: rand(300, 900) };
+              deltaFood.push({ type: 'add', food: foods[fid] });
+            }
+          }
           io.emit('arrowHit', JSON.stringify({ x: a.x, y: a.y, targetId: pid }));
           delete arrows[aid];
           arrowDelta.push({ type: 'remove', id: aid });
@@ -1238,12 +1254,25 @@ io.on('connection', socket => {
 
   socket.on('arrow', () => {
     const p = players[socket.id];
-    if (!p || !p.alive || p.score < 20 || p.arrowAmmo <= 0) return;
+    if (!p || !p.alive || p.score < 50 || p.arrowAmmo <= 0) return;
     
     p.arrowAmmo--;
     p.score = Math.max(0, p.score - ARROW_COST);
-    // Update length based on score
-    p.length = Math.floor(4 + p.score / 2);
+    // Update length based on score -> length -= ARROW_COST * 2
+    p.length = Math.max(4, p.length - ARROW_COST * 2);
+    
+    // Drop food to reimburse the length that was burnt as fuel for the arrow
+    for (let k = 0; k < ARROW_COST * 2; k += 2) {
+      if (p.segments.length > 4) {
+        const idx = p.segments.length - 1; 
+        const tail = p.segments[idx];
+        if (!tail) break;
+        p.segments.pop(); // Remove segment visually to make food drop immediate
+        const fid = foodId++;
+        foods[fid] = { id: fid, x: tail.x, y: tail.y, color: p.color, value: 1, life: rand(300, 900) };
+        pendingFood.push({ type: 'add', food: foods[fid] });
+      }
+    }
     
     const head = p.segments[0];
     const aid = arrowId++;
