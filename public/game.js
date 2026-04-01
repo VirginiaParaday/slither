@@ -23,6 +23,7 @@ let players     = {};
 let foods       = {};
 let fireballs   = {};     // { [id]: {id,x,y,angle,life,color,ownerId} }
 let mines       = {};     // { [id]: {id,x,y,life,color,ownerId} }
+let apples      = [];     // incoming list of apples
 let hitEffects  = [];     // visual-only explosion particles
 let worldW      = 3000;
 let worldH      = 3000;
@@ -270,6 +271,7 @@ socket.on('init', data => {
   players={}; data.players.forEach(p => { players[p.id]=p; });
   fireballs={}; (data.fireballs||[]).forEach(fb => { fireballs[fb.id]=fb; });
   mines={}; (data.mines||[]).forEach(m => { mines[m.id]=m; });
+  apples=data.apples||[];
   requestAnimationFrame(loop);
 });
 
@@ -293,10 +295,13 @@ socket.on('tick', data => {
   for (const hit of (data.fbHits||[])) {
     spawnExplosion(hit.x, hit.y, players[hit.targetId]?.color || '#ff6b00');
   }
-  // Spawn mine hit effects
   for (const hit of (data.mineHits||[])) {
     spawnExplosion(hit.x, hit.y, '#ff0000');
   }
+  for (const hit of (data.shieldHits||[])) {
+    spawnExplosion(hit.x, hit.y, '#00e5ff');
+  }
+  apples=data.apples||[];
   leaderboard=data.leaderboard;
   updateAmmoBar();
   updateMineBar();
@@ -487,6 +492,20 @@ function drawFood(f) {
   ctx.restore();
 }
 
+function drawApple(a) {
+  if (!isVisible(a.x, a.y, 20)) return;
+  const {x, y} = worldToScreen(a.x, a.y);
+  if (a.life < 45 && Math.floor(Date.now() / 150) % 2 === 0) return; // blink
+  ctx.save();
+  ctx.shadowBlur = 10; ctx.shadowColor = '#ff0000';
+  ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2);
+  ctx.fillStyle = '#ff3333'; ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#3fb950';
+  ctx.beginPath(); ctx.ellipse(x+3, y-7, 4, 2, -Math.PI/4, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
 // ── Fireball drawing ──────────────────────────────────────────────
 function drawFireball(fb) {
   if (!isVisible(fb.x, fb.y, 30)) return;
@@ -593,6 +612,17 @@ function drawSnake(p) {
     ctx.shadowBlur=0;
     drawSegmentOverlay(ctx,pattern,color,hx,hy,11,0);
 
+    if (p.protected) {
+      ctx.beginPath();
+      ctx.arc(hx, hy, 18, 0, Math.PI * 2);
+      ctx.strokeStyle = '#00e5ff';
+      ctx.lineWidth = 3;
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = '#00e5ff';
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
     const ea=Math.atan2(segs[0].y-segs[1].y,segs[0].x-segs[1].x);
     const px2=Math.cos(ea+Math.PI/2)*4.5, py2=Math.sin(ea+Math.PI/2)*4.5;
     const fx=Math.cos(ea)*3, fy=Math.sin(ea)*3;
@@ -630,6 +660,8 @@ function drawMinimap() {
   for (const fbid in fireballs){const fb=fireballs[fbid];mmCtx.fillStyle='#ff6b00';mmCtx.beginPath();mmCtx.arc(fb.x*sx,fb.y*sy,2.5,0,Math.PI*2);mmCtx.fill();}
   // Mines on minimap
   for (const mid in mines){const m=mines[mid];mmCtx.fillStyle='#ff0000';mmCtx.beginPath();mmCtx.arc(m.x*sx,m.y*sy,3,0,Math.PI*2);mmCtx.fill();}
+  // Apples on minimap
+  for (const a of apples){mmCtx.fillStyle='#ff3333';mmCtx.beginPath();mmCtx.arc(a.x*sx,a.y*sy,3.5,0,Math.PI*2);mmCtx.fill();}
   mmCtx.strokeStyle='rgba(255,255,255,.3)';mmCtx.lineWidth=1;
   mmCtx.strokeRect((cameraX-canvas.width/2)*sx,(cameraY-canvas.height/2)*sy,canvas.width*sx,canvas.height*sy);
 }
@@ -661,6 +693,9 @@ function loop() {
 
   // Food
   for (const fid in foods) drawFood(foods[fid]);
+
+  // Apples
+  for (const a of apples) drawApple(a);
 
   // Snakes
   for (const pid in players) { if (pid!==myId) drawSnake(players[pid]); }

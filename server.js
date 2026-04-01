@@ -21,6 +21,12 @@ const SNAKE_RADIUS    = 9;
 const FOOD_RADIUS     = 5;
 const HEAD_RADIUS     = 11;
 
+// Apple constants
+const APPLE_COUNT       = 4;
+const APPLE_RADIUS      = 9;
+const APPLE_LIFETIME    = 300;    // 10s at 30fps
+const PROTECTION_TIME   = 150;    // 5s at 30fps
+
 // Fireball constants
 const FIREBALL_SPEED    = 9;      // px/tick
 const FIREBALL_RADIUS   = 10;
@@ -40,9 +46,11 @@ const players   = {};
 const foods     = {};
 const fireballs = {};   // { [id]: Fireball }
 const mines     = {};   // { [id]: Mine }
+const apples    = {};   // { [id]: Apple }
 let foodId      = 0;
 let fireballId  = 0;
 let mineId      = 0;
+let appleId     = 0;
 
 // ── Helpers ──────────────────────────────────────────────────────
 const rand = (min, max) => Math.random() * (max - min) + min;
@@ -65,7 +73,19 @@ function spawnFood(id) {
     life: rand(300, 900)
   };
 }
-function initFood() { for (let i = 0; i < FOOD_COUNT; i++) spawnFood(foodId++); }
+function spawnApple() {
+  const id = appleId++;
+  apples[id] = {
+    id,
+    x: rand(50, WORLD_WIDTH  - 50),
+    y: rand(50, WORLD_HEIGHT - 50),
+    life: APPLE_LIFETIME
+  };
+}
+function initFood() { 
+  for (let i = 0; i < FOOD_COUNT; i++) spawnFood(foodId++); 
+  for (let i = 0; i < APPLE_COUNT; i++) spawnApple();
+}
 
 function createPlayer(id, name, color, pattern) {
   const startX = rand(300, WORLD_WIDTH  - 300);
@@ -88,7 +108,8 @@ function createPlayer(id, name, color, pattern) {
     maxAmmo:     MAX_AMMO,
     mines:       MAX_MINES,
     maxMines:    MAX_MINES,
-    mineCount:   0              // active mines placed by this player
+    mineCount:   0,             // active mines placed by this player
+    protection:  0              // shield ticks remaining
   };
 }
 
@@ -120,6 +141,22 @@ function gameTick() {
   const deltaPlayers = {};
   const deaths       = [];
   const fbHits       = [];     // { fbId, targetId }
+  const shieldHits   = [];     // { x, y }
+
+  // ── Apple expiration ──────────────────────────────────────────
+  let appleCountCurrent = 0;
+  for (const aid in apples) {
+    appleCountCurrent++;
+    apples[aid].life--;
+    if (apples[aid].life <= 0) {
+      delete apples[aid];
+      appleCountCurrent--;
+    }
+  }
+  while (appleCountCurrent < APPLE_COUNT) {
+    spawnApple();
+    appleCountCurrent++;
+  }
 
   // ── Food expiration ───────────────────────────────────────────
   let foodCountCurrent = 0;
@@ -176,6 +213,8 @@ function gameTick() {
     p.segments.unshift({ x: nx, y: ny });
     while (p.segments.length > p.length) p.segments.pop();
 
+    if (p.protection > 0) p.protection--;
+
     if (p.boosting && p.length > 10) {
       p.length -= 0.3;
       p.score   = Math.max(0, p.score - 0.3);
@@ -191,6 +230,7 @@ function gameTick() {
       score: Math.floor(p.score), alive: p.alive, boosting: (p.boosting && p.length > 10),
       ammo: p.ammo, maxAmmo: p.maxAmmo,
       mines: MAX_MINES - p.mineCount, maxMines: MAX_MINES,
+      protected: (p.protection > 0),
       segments: p.segments
     };
   }
@@ -209,6 +249,21 @@ function gameTick() {
         if (p.ammo < p.maxAmmo) p.ammo = Math.min(p.maxAmmo, p.ammo + AMMO_PER_FOOD);
         delete foods[fid];
         deltaFood.push({ type: 'remove', id: fid });
+      }
+    }
+  }
+
+  // ── Apple eating ──────────────────────────────────────────────
+  for (const pid in players) {
+    const p = players[pid];
+    if (!p.alive) continue;
+    const head = p.segments[0];
+    for (const aid in apples) {
+      const a = apples[aid];
+      if (circlesOverlap(head.x, head.y, HEAD_RADIUS, a.x, a.y, APPLE_RADIUS)) {
+        p.protection = PROTECTION_TIME;
+        delete apples[aid];
+        spawnApple();
       }
     }
   }
@@ -240,11 +295,14 @@ function gameTick() {
       for (let s = 0; s < target.segments.length; s++) {
         const seg = target.segments[s];
         if (circlesOverlap(fb.x, fb.y, FIREBALL_RADIUS, seg.x, seg.y, SNAKE_RADIUS + 2)) {
-          // Hit! shrink target
-          const dmg = Math.min(FIREBALL_DAMAGE, target.length - 4);
-          if (dmg > 0) {
-            target.length = Math.max(4, target.length - dmg);
-            target.score  = Math.max(0, target.score - dmg * 0.5);
+          if (target.protection > 0) {
+            shieldHits.push({ x: fb.x, y: fb.y });
+          } else {
+            // Hit! shrink target
+            const dmg = Math.min(FIREBALL_DAMAGE, target.length - 4);
+            if (dmg > 0) {
+              target.length = Math.max(4, target.length - dmg);
+              target.score  = Math.max(0, target.score - dmg * 0.5);
             // Drop food from removed tail
             for (let k = 0; k < dmg * 2; k++) {
               const idx = target.segments.length - 1 - k;
@@ -253,11 +311,12 @@ function gameTick() {
               foods[fid] = { id: fid, x: target.segments[idx].x, y: target.segments[idx].y, color: target.color, value: 1, life: rand(300, 900) };
               deltaFood.push({ type: 'add', food: foods[fid] });
             }
-            // Give shooter some score
-            const shooter = players[fb.ownerId];
-            if (shooter) { shooter.score += dmg * 0.5; }
+              // Give shooter some score
+              const shooter = players[fb.ownerId];
+              if (shooter) { shooter.score += dmg * 0.5; }
+            }
+            fbHits.push({ fbId: fbid, targetId: pid, x: fb.x, y: fb.y });
           }
-          fbHits.push({ fbId: fbid, targetId: pid, x: fb.x, y: fb.y });
           delete fireballs[fbid];
           fbDelta.push({ type: 'remove', id: fbid });
           hit = true;
@@ -323,21 +382,25 @@ function gameTick() {
       for (let s = 0; s < target.segments.length; s++) {
         const seg = target.segments[s];
         if (circlesOverlap(m.x, m.y, MINE_RADIUS, seg.x, seg.y, SNAKE_RADIUS + 2)) {
-          // Hit! shrink target
-          const dmg = Math.min(MINE_DAMAGE, target.length - 4);
-          if (dmg > 0) {
-            target.length = Math.max(4, target.length - dmg);
-            target.score  = Math.max(0, target.score - dmg * 0.5);
+          if (target.protection > 0) {
+            shieldHits.push({ x: m.x, y: m.y });
+          } else {
+            // Hit! shrink target
+            const dmg = Math.min(MINE_DAMAGE, target.length - 4);
+            if (dmg > 0) {
+              target.length = Math.max(4, target.length - dmg);
+              target.score  = Math.max(0, target.score - dmg * 0.5);
             // Drop food from removed tail
             for (let k = 0; k < dmg * 2; k++) {
               const idx = target.segments.length - 1 - k;
               if (idx < 0) break;
               const fid = foodId++;
-              foods[fid] = { id: fid, x: target.segments[idx].x, y: target.segments[idx].y, color: target.color, value: 1, life: rand(300, 900) };
-              deltaFood.push({ type: 'add', food: foods[fid] });
+                foods[fid] = { id: fid, x: target.segments[idx].x, y: target.segments[idx].y, color: target.color, value: 1, life: rand(300, 900) };
+                deltaFood.push({ type: 'add', food: foods[fid] });
+              }
             }
+            mineHits.push({ mineId: mid, targetId: pid, x: m.x, y: m.y });
           }
-          mineHits.push({ mineId: mid, targetId: pid, x: m.x, y: m.y });
           delete mines[mid];
           const owner = players[m.ownerId];
           if (owner) owner.mineCount--;
@@ -359,7 +422,7 @@ function gameTick() {
     .sort((a,b) => b.score - a.score).slice(0,10)
     .map(p => ({ id:p.id, name:p.name, score:Math.floor(p.score), color:p.color, alive:p.alive }));
 
-  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits });
+  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits, apples: Object.values(apples), shieldHits });
 
   for (const d of deaths) io.to(d.id).emit('died', { killedBy: d.killedBy });
 }
@@ -376,6 +439,7 @@ io.on('connection', socket => {
       players:    Object.values(players),
       fireballs:  Object.values(fireballs),
       mines:      Object.values(mines),
+      apples:     Object.values(apples),
       worldWidth:  WORLD_WIDTH,
       worldHeight: WORLD_HEIGHT
     });
