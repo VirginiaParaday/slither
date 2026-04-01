@@ -43,6 +43,7 @@ let cameraX     = 0;
 let cameraY     = 0;
 let mouse       = { x: 0, y: 0 };
 let boosting    = false;
+let rocks       = [];     // global shared rocks
 let leaderboard = [];
 let lastSent    = { angle: 0, boosting: false };
 let lastAmmo    = -1;
@@ -325,6 +326,7 @@ socket.on('init', raw => {
     return wu;
   });
 
+  rocks = data.rocks || [];
   ants = data.ants || [];
   console.log('🎮 Entidades inicializadas:', { 
     players: data.players.length, 
@@ -426,6 +428,7 @@ socket.on('tick', raw => {
       }
       worms = newWorms;
     }
+    if (data.rocks)  rocks  = data.rocks;
     leaderboard = data.leaderboard;
     updateAmmoBar();
     updateMineBar();
@@ -979,6 +982,52 @@ function drawMine(m) {
   ctx.restore();
 }
 
+function drawRock(r) {
+  if (!isVisible(r.x, r.y, r.radius || 40)) return;
+  const {x, y} = worldToScreen(r.x, r.y);
+  const rad = r.radius || 35;
+  
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(r.rotation || 0);
+  
+  // Create an irregular stone shape
+  ctx.beginPath();
+  const sides = 7;
+  for (let i = 0; i < sides; i++) {
+    const angle = (i / sides) * Math.PI * 2;
+    const dist = rad * (0.85 + Math.sin(i * 3 + (r.id % 5)) * 0.15);
+    if (i === 0) ctx.moveTo(Math.cos(angle) * dist, Math.sin(angle) * dist);
+    else ctx.lineTo(Math.cos(angle) * dist, Math.sin(angle) * dist);
+  }
+  ctx.closePath();
+  
+  // Stone texture gradient
+  const g = ctx.createRadialGradient(-rad*0.3, -rad*0.3, 0, 0, 0, rad);
+  g.addColorStop(0, '#4a4a4a');   // lighter center
+  g.addColorStop(0.6, '#2c2c2c'); // dark grey
+  g.addColorStop(1, '#1a1a1a');   // almost black edges
+  
+  ctx.fillStyle = g;
+  ctx.shadowBlur = 20;
+  ctx.shadowColor = 'rgba(0,0,0,0.7)';
+  ctx.fill();
+  
+  // Sharp crystal edge highlight
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  
+  // Top shine
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.ellipse(-rad*0.2, -rad*0.3, rad*0.4, rad*0.2, Math.PI/4, 0, Math.PI*2);
+  ctx.fill();
+  
+  ctx.restore();
+}
+
 function drawSnake(p) {
   if (!p.alive || !p.segments || p.segments.length<2) return;
   const segs=p.segments, isMe=p.id===myId;
@@ -1184,6 +1233,9 @@ function loop() {
 
     // Earthworms
     for (const W of worms) drawWorm(W);
+
+    // Rocks
+    for (const r of rocks) drawRock(r);
 
     // Ants
     for (const A of ants) drawAnt(A);

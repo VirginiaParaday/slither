@@ -98,6 +98,11 @@ const MINE_LIFETIME = 120;    // ticks (~4 seconds at 30fps)
 const MINE_DAMAGE = 10;     // segments removed on hit
 const MAX_MINES = 3;      // max mines a player can have active
 
+// Rock constants
+const ROCK_COUNT = 20;
+const ROCK_RADIUS = 35;
+const ROCK_RELOCATE_TICKS = 900; // 30 seconds at 30 fps
+
 // ── State ────────────────────────────────────────────────────────
 const players = {};
 const foods = {};
@@ -122,6 +127,9 @@ let larvaId = 0;
 let slugId = 0;
 let wormId = 0;
 let antId = 0;
+let rockId = 0;
+const rocks = {};
+let rockRelocateTimer = 0;
 let staticChanged = true; // Force first update
 const BOSS_ID = 'boss_devorador';
 
@@ -236,6 +244,33 @@ function spawnAnt() {
 }
 function initAnts() {
   for (let i = 0; i < ANT_COUNT; i++) spawnAnt();
+}
+
+function spawnRocks() {
+  for (let i = 0; i < ROCK_COUNT; i++) {
+    const id = rockId++;
+    rocks[id] = {
+      id,
+      x: rand(100, WORLD_WIDTH - 100),
+      y: rand(100, WORLD_HEIGHT - 100),
+      radius: ROCK_RADIUS + rand(-5, 5),
+      rotation: rand(0, Math.PI * 2)
+    };
+  }
+}
+
+function relocateRocks() {
+  for (const id in rocks) {
+    rocks[id].x = rand(100, WORLD_WIDTH - 100);
+    rocks[id].y = rand(100, WORLD_HEIGHT - 100);
+    rocks[id].rotation = rand(0, Math.PI * 2);
+  }
+  staticChanged = true;
+  console.log('🌑 Rocks relocated');
+}
+
+function initRocks() {
+  spawnRocks();
 }
 
 function createPlayer(id, name, color, pattern) {
@@ -992,6 +1027,34 @@ function gameTick() {
     staticChanged = false;
   }
 
+  // ── Rock collisions & Timer ──────────────────────────────────
+  rockRelocateTimer++;
+  if (rockRelocateTimer >= ROCK_RELOCATE_TICKS) {
+    rockRelocateTimer = 0;
+    relocateRocks();
+    tickPacket.rocks = Object.values(rocks);
+  }
+
+  for (const pid in players) {
+    const p = players[pid];
+    if (!p.alive || p.isNpc) continue;
+    const h = p.segments[0];
+    for (const rid in rocks) {
+      const r = rocks[rid];
+      if (circlesOverlap(h.x, h.y, HEAD_RADIUS - 2, r.x, r.y, r.radius - 5)) {
+        p.alive = false;
+        deaths.push({ id: p.id, killedBy: 'obstáculo_piedra' });
+        // Drop food
+        for (let k = 0; k < p.segments.length; k += 3) {
+          const fid = foodId++;
+          foods[fid] = { id: fid, x: p.segments[k].x, y: p.segments[k].y, color: p.color, value: 1, life: rand(300, 900) };
+          deltaFood.push({ type: 'add', food: foods[fid] });
+        }
+        break;
+      }
+    }
+  }
+
   // Explicit manual stringification for Tick to avoid binary frame issues in production
   io.emit('tick', JSON.stringify(tickPacket));
 
@@ -1040,7 +1103,8 @@ io.on('connection', socket => {
       larvas: Object.values(larvas),
       slugs: Object.values(slugs),
       worms: Object.values(worms).map(w => ({ id: w.id, head: w.segs[0], len: w.segs.length, angle: w.angle })),
-      ants: Object.values(ants)
+      ants: Object.values(ants),
+      rocks: Object.values(rocks)
     }));
     
     console.log(`🚀 Init sent to ${socket.id} (${foodList.length} foods)`);
@@ -1104,6 +1168,7 @@ io.on('connection', socket => {
 // ── Boot ─────────────────────────────────────────────────────────
   initFood();
   initAnts();
+  initRocks();
   setInterval(gameTick, 1000 / 30);
 
 const PORT = process.env.PORT || 3000;
