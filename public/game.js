@@ -1,5 +1,11 @@
 // ── game.js ──────────────────────────────────────────────────────
-const socket = io();
+const socket = io({
+  transports: ['websocket', 'polling'], // try websocket first, fallback to polling
+  upgrade: true,
+  reconnection: true,
+  reconnectionAttempts: 10,
+  reconnectionDelay: 1000
+});
 
 // DOM
 const lobby       = document.getElementById('lobby');
