@@ -22,10 +22,15 @@ const FOOD_RADIUS = 5;
 const HEAD_RADIUS = 11;
 
 // Apple constants
-const APPLE_COUNT = 4;
+const APPLE_COUNT = 6;
 const APPLE_RADIUS = 9;
 const APPLE_LIFETIME = 600;    // 10s at 30fps
 const PROTECTION_TIME = 250;    // 5s at 30fps
+
+// Green Apple constants
+const GREEN_APPLE_COUNT = 3;
+const GREEN_APPLE_LIFETIME = 600;
+const LETHAL_TIME = 250;
 
 // Fireball constants
 const FIREBALL_SPEED = 9;      // px/tick
@@ -47,10 +52,12 @@ const foods = {};
 const fireballs = {};   // { [id]: Fireball }
 const mines = {};   // { [id]: Mine }
 const apples = {};   // { [id]: Apple }
+const greenApples = {}; // { [id]: GreenApple }
 let foodId = 0;
 let fireballId = 0;
 let mineId = 0;
 let appleId = 0;
+let greenAppleId = 0;
 
 // ── Helpers ──────────────────────────────────────────────────────
 const rand = (min, max) => Math.random() * (max - min) + min;
@@ -82,9 +89,19 @@ function spawnApple() {
     life: APPLE_LIFETIME
   };
 }
+function spawnGreenApple() {
+  const id = greenAppleId++;
+  greenApples[id] = {
+    id,
+    x: rand(50, WORLD_WIDTH - 50),
+    y: rand(50, WORLD_HEIGHT - 50),
+    life: GREEN_APPLE_LIFETIME
+  };
+}
 function initFood() {
   for (let i = 0; i < FOOD_COUNT; i++) spawnFood(foodId++);
   for (let i = 0; i < APPLE_COUNT; i++) spawnApple();
+  for (let i = 0; i < GREEN_APPLE_COUNT; i++) spawnGreenApple();
 }
 
 function createPlayer(id, name, color, pattern) {
@@ -109,7 +126,8 @@ function createPlayer(id, name, color, pattern) {
     mines: MAX_MINES,
     maxMines: MAX_MINES,
     mineCount: 0,             // active mines placed by this player
-    protection: 0              // shield ticks remaining
+    protection: 0,             // shield ticks remaining
+    lethal: 0                 // lethal ticks remaining
   };
 }
 
@@ -142,6 +160,21 @@ function gameTick() {
   const deaths = [];
   const fbHits = [];     // { fbId, targetId }
   const shieldHits = [];     // { x, y }
+
+  // ── Green Apple expiration ──────────────────────────────────────
+  let greenAppleCountCurrent = 0;
+  for (const aid in greenApples) {
+    greenAppleCountCurrent++;
+    greenApples[aid].life--;
+    if (greenApples[aid].life <= 0) {
+      delete greenApples[aid];
+      greenAppleCountCurrent--;
+    }
+  }
+  while (greenAppleCountCurrent < GREEN_APPLE_COUNT) {
+    spawnGreenApple();
+    greenAppleCountCurrent++;
+  }
 
   // ── Apple expiration ──────────────────────────────────────────
   let appleCountCurrent = 0;
@@ -214,6 +247,7 @@ function gameTick() {
     while (p.segments.length > p.length) p.segments.pop();
 
     if (p.protection > 0) p.protection--;
+    if (p.lethal > 0) p.lethal--;
 
     if (p.boosting && p.length > 10) {
       p.length -= 0.3;
@@ -231,6 +265,7 @@ function gameTick() {
       ammo: p.ammo, maxAmmo: p.maxAmmo,
       mines: MAX_MINES - p.mineCount, maxMines: MAX_MINES,
       protected: (p.protection > 0),
+      lethal: (p.lethal > 0),
       segments: p.segments
     };
   }
@@ -264,6 +299,14 @@ function gameTick() {
         p.protection = PROTECTION_TIME;
         delete apples[aid];
         spawnApple();
+      }
+    }
+    for (const gid in greenApples) {
+      const g = greenApples[gid];
+      if (circlesOverlap(head.x, head.y, HEAD_RADIUS, g.x, g.y, APPLE_RADIUS)) {
+        p.lethal = LETHAL_TIME;
+        delete greenApples[gid];
+        spawnGreenApple();
       }
     }
   }
@@ -337,18 +380,30 @@ function gameTick() {
     for (let j = 0; j < pids.length; j++) {
       if (i === j) continue;
       const pa = players[pids[i]], pb = players[pids[j]];
+      if (!pa.alive || !pb.alive) continue;
       const headA = pa.segments[0];
       for (let s = 2; s < pb.segments.length; s++) {
         const seg = pb.segments[s];
         if (circlesOverlap(headA.x, headA.y, HEAD_RADIUS - 2, seg.x, seg.y, SNAKE_RADIUS)) {
-          pa.alive = false;
-          deaths.push({ id: pa.id, killedBy: pb.id });
-          for (let k = 0; k < pa.segments.length; k += 3) {
-            const fid = foodId++;
-            foods[fid] = { id: fid, x: pa.segments[k].x, y: pa.segments[k].y, color: pa.color, value: 1, life: rand(300, 900) };
-            deltaFood.push({ type: 'add', food: foods[fid] });
+          if (pa.lethal > 0) {
+            pb.alive = false;
+            deaths.push({ id: pb.id, killedBy: pa.id });
+            for (let k = 0; k < pb.segments.length; k += 3) {
+              const fid = foodId++;
+              foods[fid] = { id: fid, x: pb.segments[k].x, y: pb.segments[k].y, color: pb.color, value: 1, life: rand(300, 900) };
+              deltaFood.push({ type: 'add', food: foods[fid] });
+            }
+            break;
+          } else {
+            pa.alive = false;
+            deaths.push({ id: pa.id, killedBy: pb.id });
+            for (let k = 0; k < pa.segments.length; k += 3) {
+              const fid = foodId++;
+              foods[fid] = { id: fid, x: pa.segments[k].x, y: pa.segments[k].y, color: pa.color, value: 1, life: rand(300, 900) };
+              deltaFood.push({ type: 'add', food: foods[fid] });
+            }
+            break;
           }
-          break;
         }
       }
     }
@@ -422,7 +477,7 @@ function gameTick() {
     .sort((a, b) => b.score - a.score).slice(0, 10)
     .map(p => ({ id: p.id, name: p.name, score: Math.floor(p.score), color: p.color, alive: p.alive }));
 
-  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits, apples: Object.values(apples), shieldHits });
+  io.emit('tick', { players: deltaPlayers, foodChanges: deltaFood, leaderboard, fbDelta, fbHits, mineDelta, mineHits, apples: Object.values(apples), shieldHits, greenApples: Object.values(greenApples) });
 
   for (const d of deaths) io.to(d.id).emit('died', { killedBy: d.killedBy });
 }
@@ -440,6 +495,7 @@ io.on('connection', socket => {
       fireballs: Object.values(fireballs),
       mines: Object.values(mines),
       apples: Object.values(apples),
+      greenApples: Object.values(greenApples),
       worldWidth: WORLD_WIDTH,
       worldHeight: WORLD_HEIGHT
     });

@@ -24,6 +24,7 @@ let foods       = {};
 let fireballs   = {};     // { [id]: {id,x,y,angle,life,color,ownerId} }
 let mines       = {};     // { [id]: {id,x,y,life,color,ownerId} }
 let apples      = [];     // incoming list of apples
+let greenApples = [];     // incoming list of green apples
 let hitEffects  = [];     // visual-only explosion particles
 let worldW      = 3000;
 let worldH      = 3000;
@@ -272,6 +273,7 @@ socket.on('init', data => {
   fireballs={}; (data.fireballs||[]).forEach(fb => { fireballs[fb.id]=fb; });
   mines={}; (data.mines||[]).forEach(m => { mines[m.id]=m; });
   apples=data.apples||[];
+  greenApples=data.greenApples||[];
   requestAnimationFrame(loop);
 });
 
@@ -302,6 +304,7 @@ socket.on('tick', data => {
     spawnExplosion(hit.x, hit.y, '#00e5ff');
   }
   apples=data.apples||[];
+  greenApples=data.greenApples||[];
   leaderboard=data.leaderboard;
   updateAmmoBar();
   updateMineBar();
@@ -506,6 +509,20 @@ function drawApple(a) {
   ctx.restore();
 }
 
+function drawGreenApple(a) {
+  if (!isVisible(a.x, a.y, 20)) return;
+  const {x, y} = worldToScreen(a.x, a.y);
+  if (a.life < 45 && Math.floor(Date.now() / 150) % 2 === 0) return; // blink
+  ctx.save();
+  ctx.shadowBlur = 10; ctx.shadowColor = '#00ff00';
+  ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2);
+  ctx.fillStyle = '#32cd32'; ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#8b4513';
+  ctx.beginPath(); ctx.ellipse(x+3, y-7, 4, 2, -Math.PI/4, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
 // ── Fireball drawing ──────────────────────────────────────────────
 function drawFireball(fb) {
   if (!isVisible(fb.x, fb.y, 30)) return;
@@ -621,6 +638,15 @@ function drawSnake(p) {
       ctx.shadowColor = '#00e5ff';
       ctx.stroke();
       ctx.shadowBlur = 0;
+    } else if (p.lethal) {
+      ctx.beginPath();
+      ctx.arc(hx, hy, 18, 0, Math.PI * 2);
+      ctx.strokeStyle = '#32cd32';
+      ctx.lineWidth = 3;
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = '#32cd32';
+      ctx.stroke();
+      ctx.shadowBlur = 0;
     }
 
     const ea=Math.atan2(segs[0].y-segs[1].y,segs[0].x-segs[1].x);
@@ -662,6 +688,8 @@ function drawMinimap() {
   for (const mid in mines){const m=mines[mid];mmCtx.fillStyle='#ff0000';mmCtx.beginPath();mmCtx.arc(m.x*sx,m.y*sy,3,0,Math.PI*2);mmCtx.fill();}
   // Apples on minimap
   for (const a of apples){mmCtx.fillStyle='#ff3333';mmCtx.beginPath();mmCtx.arc(a.x*sx,a.y*sy,3.5,0,Math.PI*2);mmCtx.fill();}
+  // Green Apples on minimap
+  for (const a of greenApples){mmCtx.fillStyle='#32cd32';mmCtx.beginPath();mmCtx.arc(a.x*sx,a.y*sy,3.5,0,Math.PI*2);mmCtx.fill();}
   mmCtx.strokeStyle='rgba(255,255,255,.3)';mmCtx.lineWidth=1;
   mmCtx.strokeRect((cameraX-canvas.width/2)*sx,(cameraY-canvas.height/2)*sy,canvas.width*sx,canvas.height*sy);
 }
@@ -696,6 +724,9 @@ function loop() {
 
   // Apples
   for (const a of apples) drawApple(a);
+
+  // Green Apples
+  for (const a of greenApples) drawGreenApple(a);
 
   // Snakes
   for (const pid in players) { if (pid!==myId) drawSnake(players[pid]); }
