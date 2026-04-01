@@ -301,37 +301,39 @@ socket.on('init', data => {
 
 let lastTickLog = 0;
 socket.on('tick', data => {
-  if (Date.now() - lastTickLog > 5000) { 
-    console.log('💓 Tick:', Object.keys(data.players || {}).length, 'jugadores');
-    lastTickLog = Date.now();
-  }
-  for (const pid in data.players) {
-    const pu = data.players[pid];
-    if (!players[pid]) {
-      players[pid] = pu;
-      continue;
+  try {
+    if (!data) return;
+    if (Date.now() - lastTickLog > 5000) { 
+      console.log('💓 Tick:', Object.keys(data.players || {}).length, 'jugadores');
+      lastTickLog = Date.now();
     }
-    // Update basic properties
-    for (const key in pu) {
-      if (key !== 'segments' && key !== 'head') players[pid][key] = pu[key];
-    }
-    // Update segments intelligently
-    if (pu.segments) {
-      players[pid].segments = pu.segments;
-    } else if (pu.head) {
-      const segs = players[pid].segments || [];
-      // If snake moved, unshift new head
-      if (segs.length === 0 || (pu.head && (segs[0].x !== pu.head.x || segs[0].y !== pu.head.y))) {
-        segs.unshift(pu.head);
-        while (segs.length > (pu.len || 1)) segs.pop();
+    for (const pid in data.players) {
+      const pu = data.players[pid];
+      if (!players[pid]) {
+        players[pid] = pu;
+        continue;
       }
-      players[pid].segments = segs;
+      // Update basic properties
+      for (const key in pu) {
+        if (key !== 'segments' && key !== 'head') players[pid][key] = pu[key];
+      }
+      // Update segments intelligently
+      if (pu.segments) {
+        players[pid].segments = pu.segments;
+      } else if (pu.head) {
+        const segs = players[pid].segments || [];
+        // If snake moved, unshift new head
+        if (segs.length === 0 || (pu.head && (segs[0].x !== pu.head.x || segs[0].y !== pu.head.y))) {
+          segs.unshift(pu.head);
+          while (segs.length > (pu.len || 1)) segs.pop();
+        }
+        players[pid].segments = segs;
+      }
     }
-  }
-  for (const fc of data.foodChanges) {
-    if (fc.type==='add')    foods[fc.food.id]=fc.food;
-    if (fc.type==='remove') delete foods[fc.id];
-  }
+    for (const fc of data.foodChanges) {
+      if (fc.type==='add')    foods[fc.food.id]=fc.food;
+      if (fc.type==='remove') delete foods[fc.id];
+    }
   // Apply fireball delta
   for (const fd of (data.fbDelta||[])) {
     if (fd.type==='update') fireballs[fd.fb.id]=fd.fb;
@@ -380,10 +382,13 @@ socket.on('tick', data => {
      worms = newWorms;
   }
   ants = data.ants || [];
-  leaderboard = data.leaderboard;
-  updateAmmoBar();
-  updateMineBar();
-  updateBuffUI();
+    leaderboard = data.leaderboard;
+    updateAmmoBar();
+    updateMineBar();
+    updateBuffUI();
+  } catch (err) {
+    console.error('❌ Error procesando Tick:', err, data);
+  }
 });
 
 socket.on('fireballSpawned', fb => { fireballs[fb.id]=fb; });
@@ -1074,69 +1079,75 @@ function updateLeaderboard() {
 
 // ── Main loop ─────────────────────────────────────────────────────
 function loop() {
-  sendInput();
-  const me=players[myId];
-  if (me?.alive && me.segments?.length){
-    const h=me.segments[0];
-    if (h && typeof h.x === 'number' && typeof h.y === 'number' && !isNaN(h.x) && !isNaN(h.y)) {
-      const targetX = h.x;
-      const targetY = h.y;
-      if (isNaN(cameraX) || cameraX === 0) cameraX = targetX;
-      if (isNaN(cameraY) || cameraY === 0) cameraY = targetY;
-      cameraX += (targetX - cameraX) * 0.1;
-      cameraY += (targetY - cameraY) * 0.1;
+  try {
+    sendInput();
+    const me=players[myId];
+    if (me?.alive && me.segments?.length){
+      const h=me.segments[0];
+      if (h && typeof h.x === 'number' && typeof h.y === 'number' && !isNaN(h.x) && !isNaN(h.y)) {
+        const targetX = h.x;
+        const targetY = h.y;
+        if (isNaN(cameraX) || cameraX === 0) cameraX = targetX;
+        if (isNaN(cameraY) || cameraY === 0) cameraY = targetY;
+        cameraX += (targetX - cameraX) * 0.1;
+        cameraY += (targetY - cameraY) * 0.1;
+      }
     }
+    
+    // Final NaN fallback
+    if (isNaN(cameraX)) cameraX = worldW / 2;
+    if (isNaN(cameraY)) cameraY = worldH / 2;
+
+    drawBackground();
+    drawWorldBorder();
+
+    // Food
+    for (const fid in foods) drawFood(foods[fid]);
+
+    // Apples
+    for (const a of apples) drawApple(a);
+
+    // Green Apples
+    for (const a of greenApples) drawGreenApple(a);
+
+    // Portals
+    for (const port of portals) drawPortal(port);
+
+    // Puddles
+    for (const pud of puddles) drawPuddle(pud);
+
+    // Larvae
+    for (const L of larvas) drawLarva(L);
+
+    // Slugs
+    for (const S of slugs) drawSlug(S);
+
+    // Earthworms
+    for (const W of worms) drawWorm(W);
+
+    // Ants
+    for (const A of ants) drawAnt(A);
+
+    // Snakes
+    for (const pid in players) { if (pid!==myId) drawSnake(players[pid]); }
+    if (myId&&players[myId]) drawSnake(players[myId]);
+
+    // Fireballs
+    for (const fbid in fireballs) drawFireball(fireballs[fbid]);
+
+    // Mines
+    for (const mid in mines) drawMine(mines[mid]);
+
+    // Explosion particles
+    updateAndDrawEffects();
+
+    drawMinimap();
+    updateLeaderboard();
+
+    requestAnimationFrame(loop);
+  } catch (err) {
+    console.error('❌ Error en bucle principal:', err);
+    // Intentar seguir con el bucle incluso si hay un error puntual
+    requestAnimationFrame(loop);
   }
-  
-  // Final NaN fallback
-  if (isNaN(cameraX)) cameraX = worldW / 2;
-  if (isNaN(cameraY)) cameraY = worldH / 2;
-
-  drawBackground();
-  drawWorldBorder();
-
-  // Food
-  for (const fid in foods) drawFood(foods[fid]);
-
-  // Apples
-  for (const a of apples) drawApple(a);
-
-  // Green Apples
-  for (const a of greenApples) drawGreenApple(a);
-
-  // Portals
-  for (const port of portals) drawPortal(port);
-
-  // Puddles
-  for (const pud of puddles) drawPuddle(pud);
-
-  // Larvae
-  for (const L of larvas) drawLarva(L);
-
-  // Slugs
-  for (const S of slugs) drawSlug(S);
-
-  // Earthworms
-  for (const W of worms) drawWorm(W);
-
-  // Ants
-  for (const A of ants) drawAnt(A);
-
-  // Snakes
-  for (const pid in players) { if (pid!==myId) drawSnake(players[pid]); }
-  if (myId&&players[myId]) drawSnake(players[myId]);
-
-  // Fireballs
-  for (const fbid in fireballs) drawFireball(fireballs[fbid]);
-
-  // Mines
-  for (const mid in mines) drawMine(mines[mid]);
-
-  // Explosion particles
-  updateAndDrawEffects();
-
-  drawMinimap();
-  updateLeaderboard();
-
-  requestAnimationFrame(loop);
 }
