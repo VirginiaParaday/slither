@@ -308,6 +308,7 @@ socket.on('tick', data => {
   leaderboard=data.leaderboard;
   updateAmmoBar();
   updateMineBar();
+  updateBuffUI();
 });
 
 socket.on('fireballSpawned', fb => { fireballs[fb.id]=fb; });
@@ -374,6 +375,28 @@ function updateMineBar() {
     if (i < mines) orb.classList.add('loaded');
     else          orb.classList.remove('loaded');
   });
+}
+
+// ── Buff UI ────────────────────────────────────────────────────────
+const buffIndicator = document.getElementById('buffIndicator');
+const buffIcon = document.getElementById('buffIcon');
+const buffLabel = document.getElementById('buffLabel');
+
+function updateBuffUI() {
+  const me = players[myId];
+  if (!me) return;
+
+  if (me.protected) {
+    buffIndicator.className = 'active';
+    buffIcon.textContent = '🍎';
+    buffLabel.textContent = 'ESCUDO';
+  } else if (me.lethal) {
+    buffIndicator.className = 'active green';
+    buffIcon.textContent = '🍏';
+    buffLabel.textContent = 'LETAL';
+  } else {
+    buffIndicator.className = '';
+  }
 }
 
 // ── Explosion particles ───────────────────────────────────────────

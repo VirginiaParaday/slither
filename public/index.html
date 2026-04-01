@@ -493,6 +493,50 @@
         box-shadow: 0 2px 15px rgba(139, 0, 0, 0.6);
       }
 
+      /* Buff indicator */
+      @keyframes popInIndicator {
+        0% { transform: scale(0.5); opacity: 0; }
+        100% { transform: scale(1); opacity: 1; }
+      }
+      #buffIndicator {
+        position: absolute;
+        bottom: 270px;
+        left: 24px;
+        display: none;
+        align-items: center;
+        gap: 10px;
+        border-radius: 14px;
+        padding: 8px 14px;
+        transition: all 0.3s;
+        z-index: 10;
+        backdrop-filter: blur(8px);
+      }
+      #buffIndicator.active {
+        display: flex;
+        animation: popInIndicator 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        background: rgba(255, 51, 51, 0.2);
+        border: 2px solid #ff3333;
+        box-shadow: 0 0 10px rgba(255, 51, 51, 0.5);
+      }
+      #buffIndicator.green {
+        background: rgba(50, 205, 50, 0.2) !important;
+        border-color: #32cd32 !important;
+        box-shadow: 0 0 10px rgba(50, 205, 50, 0.5) !important;
+      }
+      #buffIcon {
+        font-size: 1.5rem;
+        line-height: 1;
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+      }
+      #buffLabel {
+        font-size: 0.8rem;
+        font-weight: 900;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #fff;
+        text-shadow: 0 1px 3px #000;
+      }
+
       /* ── SKIN PICKER ── */
       .skin-section {
         margin: 1.2rem 0;
@@ -672,6 +716,10 @@
 
     <!-- HUD -->
     <div id="hud" style="display: none">
+      <div id="buffIndicator">
+        <div id="buffIcon">🍎</div>
+        <div id="buffLabel">ESCUDO</div>
+      </div>
       <div id="leaderboard">
         <h3>🏆 Ranking</h3>
         <div id="lbRows"></div>
