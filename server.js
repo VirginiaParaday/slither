@@ -635,7 +635,7 @@ function gameTick() {
       }
     }
 
-    deltaPlayers[pid] = {
+    const playerUpdate = {
       id: p.id, name: p.name, color: p.color, pattern: p.pattern,
       score: Math.floor(p.score), alive: p.alive, boosting: (p.boosting && p.length > 10),
       ammo: p.ammo, maxAmmo: p.maxAmmo,
@@ -644,8 +644,18 @@ function gameTick() {
       lethal: (p.lethal > 0),
       isNpc: p.isNpc,
       slow: (p.slow > 0),
-      segments: p.segments
+      len: p.segments.length
     };
+
+    // Only send full segments if it's the first time or every ~2 seconds (60 ticks) as safety
+    if (!p._lastSegmentsSent || (Date.now() - p._lastSegmentsSent > 2000)) {
+      playerUpdate.segments = p.segments;
+      p._lastSegmentsSent = Date.now();
+    } else {
+      playerUpdate.head = p.segments[0];
+    }
+
+    deltaPlayers[pid] = playerUpdate;
   }
 
   // ── Food eating ───────────────────────────────────────────────
@@ -969,7 +979,7 @@ function gameTick() {
     shieldHits, 
     larvas: Object.values(larvas), 
     slugs: Object.values(slugs), 
-    worms: Object.values(worms), 
+    worms: Object.values(worms).map(w => ({ id: w.id, head: w.segs[0], len: w.segs.length, angle: w.angle })), 
     ants: Object.values(ants) 
   };
   

@@ -305,7 +305,29 @@ socket.on('tick', data => {
     console.log('💓 Tick:', Object.keys(data.players || {}).length, 'jugadores');
     lastTickLog = Date.now();
   }
-  for (const pid in data.players) players[pid]=data.players[pid];
+  for (const pid in data.players) {
+    const pu = data.players[pid];
+    if (!players[pid]) {
+      players[pid] = pu;
+      continue;
+    }
+    // Update basic properties
+    for (const key in pu) {
+      if (key !== 'segments' && key !== 'head') players[pid][key] = pu[key];
+    }
+    // Update segments intelligently
+    if (pu.segments) {
+      players[pid].segments = pu.segments;
+    } else if (pu.head) {
+      const segs = players[pid].segments || [];
+      // If snake moved, unshift new head
+      if (segs.length === 0 || (segs[0].x !== pu.head.x || segs[0].y !== pu.head.y)) {
+        segs.unshift(pu.head);
+        while (segs.length > (pu.len || 1)) segs.pop();
+      }
+      players[pid].segments = segs;
+    }
+  }
   for (const fc of data.foodChanges) {
     if (fc.type==='add')    foods[fc.food.id]=fc.food;
     if (fc.type==='remove') delete foods[fc.id];
@@ -338,6 +360,26 @@ socket.on('tick', data => {
   slugs  = data.slugs || [];
   worms  = data.worms || [];
   ants   = data.ants || [];
+  if (data.worms) {
+     const newWorms = [];
+     for (const wu of data.worms) {
+       let oldWorm = worms.find(w => w.id === wu.id);
+       if (!oldWorm || wu.segments) {
+         newWorms.push(wu);
+       } else {
+         const segs = oldWorm.segments || [];
+         if (segs.length === 0 || (segs[0].x !== wu.head.x || segs[0].y !== wu.head.y)) {
+           segs.unshift(wu.head);
+           while (segs.length > (wu.len || 1)) segs.pop();
+         }
+         oldWorm.segments = segs;
+         oldWorm.angle = wu.angle;
+         newWorms.push(oldWorm);
+       }
+     }
+     worms = newWorms;
+  }
+  ants = data.ants || [];
   leaderboard = data.leaderboard;
   updateAmmoBar();
   updateMineBar();
