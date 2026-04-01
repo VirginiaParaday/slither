@@ -311,7 +311,7 @@ socket.on('died', ({ killedBy }) => {
   deathScreen.classList.add('show');
 });
 socket.on('respawned', ({ player }) => {
-  players[myId]=player; deathScreen.classList.remove('show'); updateAmmoBar();
+  players[myId]=player; deathScreen.classList.remove('show'); updateAmmoBar(); updateMineBar();
 });
 document.getElementById('respawnBtn').addEventListener('click', () => {
   socket.emit('respawn', { color: selectedColor, pattern: selectedPattern });

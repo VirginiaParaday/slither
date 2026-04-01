@@ -85,6 +85,8 @@ function createPlayer(id, name, color, pattern) {
     length:      10,
     ammo:        MAX_AMMO,      // current fireball charges
     maxAmmo:     MAX_AMMO,
+    mines:       MAX_MINES,
+    maxMines:    MAX_MINES,
     mineCount:   0              // active mines placed by this player
   };
 }
@@ -164,6 +166,7 @@ function gameTick() {
       id: p.id, name: p.name, color: p.color, pattern: p.pattern,
       score: Math.floor(p.score), alive: p.alive, boosting: p.boosting,
       ammo: p.ammo, maxAmmo: p.maxAmmo,
+      mines: MAX_MINES - p.mineCount, maxMines: MAX_MINES,
       segments: p.segments
     };
   }
