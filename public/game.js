@@ -191,6 +191,19 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => { keys[e.key]=false; });
 
+// Fire button for mobile
+const fireBtn = document.getElementById('fireBtn');
+if (fireBtn) {
+  fireBtn.addEventListener('touchstart', e => {
+    e.preventDefault();
+    shootFireball();
+  });
+  fireBtn.addEventListener('mousedown', e => {
+    e.preventDefault();
+    shootFireball();
+  });
+}
+
 // ── Fireball shooting ─────────────────────────────────────────────
 function shootFireball() {
   const me = players[myId];

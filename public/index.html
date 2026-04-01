@@ -1,376 +1,604 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Gusanito.io — Multijugador</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
-<style>
-  :root {
-    --bg:      #0d1117;
-    --surface: #161b22;
-    --border:  #30363d;
-    --green:   #3fb950;
-    --purple:  #9b59b6;
-    --text:    #e6edf3;
-    --muted:   #8b949e;
-    --accent:  #58a6ff;
-  }
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gusanito.io — Multijugador</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0d1117;
+        --surface: #161b22;
+        --border: #30363d;
+        --green: #3fb950;
+        --purple: #9b59b6;
+        --text: #e6edf3;
+        --muted: #8b949e;
+        --accent: #58a6ff;
+      }
 
-  * { margin: 0; padding: 0; box-sizing: border-box; }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
 
-  body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: 'Nunito', sans-serif;
-    overflow: hidden;
-    width: 100vw;
-    height: 100vh;
-  }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: "Nunito", sans-serif;
+        overflow: hidden;
+        width: 100vw;
+        height: 100vh;
+      }
 
-  /* ── LOBBY ── */
-  #lobby {
-    position: fixed; inset: 0; z-index: 100;
-    display: flex; align-items: center; justify-content: center;
-    background: radial-gradient(ellipse at 50% 40%, #1a2b1a 0%, #0d1117 70%);
-  }
+      /* ── LOBBY ── */
+      #lobby {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(
+          ellipse at 50% 40%,
+          #1a2b1a 0%,
+          #0d1117 70%
+        );
+      }
 
-  .lobby-card {
-    text-align: center;
-    animation: fadeUp .6s ease both;
-  }
+      .lobby-card {
+        text-align: center;
+        animation: fadeUp 0.6s ease both;
+      }
 
-  @keyframes fadeUp {
-    from { opacity:0; transform:translateY(30px); }
-    to   { opacity:1; transform:translateY(0);    }
-  }
+      @keyframes fadeUp {
+        from {
+          opacity: 0;
+          transform: translateY(30px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
 
-  .game-title {
-    font-family: 'Fredoka One', cursive;
-    font-size: clamp(3rem, 10vw, 7rem);
-    line-height: 1;
-    margin-bottom: .3em;
-    background: linear-gradient(135deg, #3fb950 30%, #9b59b6 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    filter: drop-shadow(0 0 30px #3fb95060);
-  }
+      .game-title {
+        font-family: "Fredoka One", cursive;
+        font-size: clamp(3rem, 10vw, 7rem);
+        line-height: 1;
+        margin-bottom: 0.3em;
+        background: linear-gradient(135deg, #3fb950 30%, #9b59b6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        filter: drop-shadow(0 0 30px #3fb95060);
+      }
 
-  .lobby-tagline {
-    color: var(--muted);
-    font-size: 1rem;
-    margin-bottom: 2.5rem;
-    letter-spacing: .05em;
-  }
+      .lobby-tagline {
+        color: var(--muted);
+        font-size: 1rem;
+        margin-bottom: 2.5rem;
+        letter-spacing: 0.05em;
+      }
 
-  .input-wrapper {
-    position: relative;
-    margin-bottom: 1.2rem;
-  }
+      .input-wrapper {
+        position: relative;
+        margin-bottom: 1.2rem;
+      }
 
-  #nickname {
-    width: 280px;
-    padding: .85rem 1.4rem;
-    background: rgba(255,255,255,.06);
-    border: 2px solid var(--border);
-    border-radius: 50px;
-    color: var(--text);
-    font-family: 'Nunito', sans-serif;
-    font-size: 1.1rem;
-    font-weight: 600;
-    text-align: center;
-    outline: none;
-    transition: border-color .2s, box-shadow .2s;
-  }
-  #nickname::placeholder { color: var(--muted); }
-  #nickname:focus {
-    border-color: var(--green);
-    box-shadow: 0 0 0 4px #3fb95030;
-  }
+      #nickname {
+        width: 280px;
+        padding: 0.85rem 1.4rem;
+        background: rgba(255, 255, 255, 0.06);
+        border: 2px solid var(--border);
+        border-radius: 50px;
+        color: var(--text);
+        font-family: "Nunito", sans-serif;
+        font-size: 1.1rem;
+        font-weight: 600;
+        text-align: center;
+        outline: none;
+        transition:
+          border-color 0.2s,
+          box-shadow 0.2s;
+      }
+      #nickname::placeholder {
+        color: var(--muted);
+      }
+      #nickname:focus {
+        border-color: var(--green);
+        box-shadow: 0 0 0 4px #3fb95030;
+      }
 
-  #playBtn {
-    display: block;
-    width: 280px;
-    padding: .9rem;
-    background: linear-gradient(135deg, #3fb950, #2ea043);
-    border: none;
-    border-radius: 50px;
-    color: #fff;
-    font-family: 'Fredoka One', cursive;
-    font-size: 1.4rem;
-    letter-spacing: .05em;
-    cursor: pointer;
-    transition: transform .15s, box-shadow .15s;
-    box-shadow: 0 4px 20px #3fb95060;
-  }
-  #playBtn:hover  { transform: translateY(-2px); box-shadow: 0 8px 28px #3fb95080; }
-  #playBtn:active { transform: translateY(0);    }
+      #playBtn {
+        display: block;
+        width: 280px;
+        padding: 0.9rem;
+        background: linear-gradient(135deg, #3fb950, #2ea043);
+        border: none;
+        border-radius: 50px;
+        color: #fff;
+        font-family: "Fredoka One", cursive;
+        font-size: 1.4rem;
+        letter-spacing: 0.05em;
+        cursor: pointer;
+        transition:
+          transform 0.15s,
+          box-shadow 0.15s;
+        box-shadow: 0 4px 20px #3fb95060;
+      }
+      #playBtn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 28px #3fb95080;
+      }
+      #playBtn:active {
+        transform: translateY(0);
+      }
 
-  .lobby-worm {
-    margin: 2rem auto 0;
-    display: flex; gap: 6px; justify-content: center;
-    animation: wiggle 1.5s ease-in-out infinite;
-  }
-  @keyframes wiggle {
-    0%,100% { transform: rotate(-3deg); }
-    50%      { transform: rotate(3deg); }
-  }
-  .lobby-worm span {
-    display: inline-block;
-    width: 22px; height: 22px;
-    border-radius: 50%;
-    background: var(--green);
-  }
-  .lobby-worm span:first-child { width:28px; height:28px; background:#5ce65c; position:relative; }
-  .lobby-worm span:first-child::before,
-  .lobby-worm span:first-child::after {
-    content:''; position:absolute; width:5px; height:5px;
-    background:#fff; border-radius:50%; top:5px;
-  }
-  .lobby-worm span:first-child::before { left:5px; }
-  .lobby-worm span:first-child::after  { right:5px; }
+      .lobby-worm {
+        margin: 2rem auto 0;
+        display: flex;
+        gap: 6px;
+        justify-content: center;
+        animation: wiggle 1.5s ease-in-out infinite;
+      }
+      @keyframes wiggle {
+        0%,
+        100% {
+          transform: rotate(-3deg);
+        }
+        50% {
+          transform: rotate(3deg);
+        }
+      }
+      .lobby-worm span {
+        display: inline-block;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: var(--green);
+      }
+      .lobby-worm span:first-child {
+        width: 28px;
+        height: 28px;
+        background: #5ce65c;
+        position: relative;
+      }
+      .lobby-worm span:first-child::before,
+      .lobby-worm span:first-child::after {
+        content: "";
+        position: absolute;
+        width: 5px;
+        height: 5px;
+        background: #fff;
+        border-radius: 50%;
+        top: 5px;
+      }
+      .lobby-worm span:first-child::before {
+        left: 5px;
+      }
+      .lobby-worm span:first-child::after {
+        right: 5px;
+      }
 
-  /* ── GAME ── */
-  #gameCanvas {
-    display: block;
-    position: fixed; top:0; left:0;
-  }
+      /* ── GAME ── */
+      #gameCanvas {
+        display: block;
+        position: fixed;
+        top: 0;
+        left: 0;
+      }
 
-  /* ── HUD ── */
-  #hud {
-    position: fixed; top:0; left:0; right:0; bottom:0;
-    pointer-events: none;
-    z-index: 10;
-  }
+      /* ── HUD ── */
+      #hud {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        pointer-events: none;
+        z-index: 10;
+      }
 
-  /* Score */
-  #myScore {
-    position: absolute; bottom: 24px; left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0,0,0,.55);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(255,255,255,.1);
-    padding: .5rem 1.8rem;
-    border-radius: 50px;
-    font-family: 'Fredoka One', cursive;
-    font-size: 1.3rem;
-    letter-spacing: .05em;
-  }
-  #myScore span { color: var(--green); }
+      /* Score */
+      #myScore {
+        position: absolute;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 0.5rem 1.8rem;
+        border-radius: 50px;
+        font-family: "Fredoka One", cursive;
+        font-size: 1.3rem;
+        letter-spacing: 0.05em;
+      }
+      #myScore span {
+        color: var(--green);
+      }
 
-  /* Leaderboard */
-  #leaderboard {
-    position: absolute; top: 16px; right: 16px;
-    background: rgba(0,0,0,.6);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(255,255,255,.08);
-    border-radius: 12px;
-    padding: .7rem 1rem;
-    min-width: 200px;
-  }
-  #leaderboard h3 {
-    font-family: 'Fredoka One', cursive;
-    font-size: .95rem;
-    color: var(--muted);
-    text-transform: uppercase;
-    letter-spacing: .1em;
-    margin-bottom: .5rem;
-    text-align: center;
-  }
-  .lb-row {
-    display: flex; align-items: center; gap: .5rem;
-    padding: .18rem 0;
-    font-size: .85rem;
-    font-weight: 700;
-  }
-  .lb-rank  { color: var(--muted); width: 18px; text-align:right; font-size:.75rem; }
-  .lb-dot   { width:10px;height:10px;border-radius:50%;flex-shrink:0; }
-  .lb-name  { flex:1; white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
-  .lb-score { color: var(--accent); font-family:'Fredoka One',cursive; }
-  .lb-row.me .lb-name { color: var(--green); }
+      /* Leaderboard */
+      #leaderboard {
+        position: absolute;
+        top: 16px;
+        right: 16px;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 0.7rem 1rem;
+        min-width: 200px;
+      }
+      #leaderboard h3 {
+        font-family: "Fredoka One", cursive;
+        font-size: 0.95rem;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        margin-bottom: 0.5rem;
+        text-align: center;
+      }
+      .lb-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.18rem 0;
+        font-size: 0.85rem;
+        font-weight: 700;
+      }
+      .lb-rank {
+        color: var(--muted);
+        width: 18px;
+        text-align: right;
+        font-size: 0.75rem;
+      }
+      .lb-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .lb-name {
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .lb-score {
+        color: var(--accent);
+        font-family: "Fredoka One", cursive;
+      }
+      .lb-row.me .lb-name {
+        color: var(--green);
+      }
 
-  /* Mini-map */
-  #minimap {
-    position: absolute; bottom: 80px; right: 16px;
-    width: 130px; height: 130px;
-    background: rgba(0,0,0,.5);
-    border: 1px solid rgba(255,255,255,.08);
-    border-radius: 8px;
-    overflow: hidden;
-  }
+      /* Mini-map */
+      #minimap {
+        position: absolute;
+        bottom: 80px;
+        right: 16px;
+        width: 130px;
+        height: 130px;
+        background: rgba(0, 0, 0, 0.5);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        overflow: hidden;
+      }
 
-  /* ── AMMO BAR ── */
-  #ammoBar {
-    position: absolute; bottom: 24px; left: 24px;
-    background: rgba(0,0,0,.6);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(255,255,255,.08);
-    border-radius: 12px;
-    padding: .5rem .9rem;
-    display: flex; flex-direction: column; gap: 4px;
-    min-width: 140px;
-  }
-  .ammo-label {
-    font-size: .68rem; font-weight: 800; color: var(--muted);
-    text-transform: uppercase; letter-spacing: .1em;
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  .ammo-label span { color: #ff9f43; font-family: 'Fredoka One', cursive; font-size:.85rem; }
-  .ammo-orbs { display: flex; gap: 5px; align-items: center; }
-  .ammo-orb {
-    width: 18px; height: 18px; border-radius: 50%;
-    border: 2px solid rgba(255,255,255,.15);
-    background: rgba(255,255,255,.05);
-    transition: background .2s, box-shadow .2s, transform .15s;
-  }
-  .ammo-orb.loaded {
-    background: radial-gradient(circle at 35% 35%, #ffdd57, #ff6b00);
-    border-color: #ff9f43;
-    box-shadow: 0 0 8px #ff6b0088;
-  }
-  @keyframes orbFire {
-    0%   { transform: scale(1.5); background: radial-gradient(circle,#fff,#ffdd57); }
-    100% { transform: scale(1);   background: rgba(255,255,255,.05); }
-  }
-  .ammo-orb.firing { animation: orbFire .3s ease forwards; }
-  .hints-row { font-size: .62rem; color: var(--muted); font-weight: 600; margin-top: 2px; }
+      /* ── AMMO BAR ── */
+      #ammoBar {
+        position: absolute;
+        bottom: 24px;
+        left: 24px;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 0.5rem 0.9rem;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 140px;
+      }
+      .ammo-label {
+        font-size: 0.68rem;
+        font-weight: 800;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      .ammo-label span {
+        color: #ff9f43;
+        font-family: "Fredoka One", cursive;
+        font-size: 0.85rem;
+      }
+      .ammo-orbs {
+        display: flex;
+        gap: 5px;
+        align-items: center;
+      }
+      .ammo-orb {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.05);
+        transition:
+          background 0.2s,
+          box-shadow 0.2s,
+          transform 0.15s;
+      }
+      .ammo-orb.loaded {
+        background: radial-gradient(circle at 35% 35%, #ffdd57, #ff6b00);
+        border-color: #ff9f43;
+        box-shadow: 0 0 8px #ff6b0088;
+      }
+      @keyframes orbFire {
+        0% {
+          transform: scale(1.5);
+          background: radial-gradient(circle, #fff, #ffdd57);
+        }
+        100% {
+          transform: scale(1);
+          background: rgba(255, 255, 255, 0.05);
+        }
+      }
+      .ammo-orb.firing {
+        animation: orbFire 0.3s ease forwards;
+      }
+      .hints-row {
+        font-size: 0.62rem;
+        color: var(--muted);
+        font-weight: 600;
+        margin-top: 2px;
+      }
 
-  /* ── SKIN PICKER ── */
-  .skin-section { margin: 1.2rem 0; }
-  .skin-section-label {
-    color: var(--muted); font-size: .75rem; font-weight: 800;
-    text-transform: uppercase; letter-spacing: .12em;
-    margin-bottom: .6rem;
-  }
+      /* Fire button for mobile */
+      .fire-button {
+        position: absolute;
+        bottom: 24px;
+        left: 24px;
+        width: 70px;
+        height: 70px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #ff6b00, #ff9f43);
+        border: 3px solid #ffdd57;
+        color: #fff;
+        font-size: 1.8rem;
+        cursor: pointer;
+        pointer-events: all;
+        box-shadow: 0 4px 20px rgba(255, 107, 0, 0.6);
+        transition:
+          transform 0.15s,
+          box-shadow 0.15s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 20;
+      }
+      .fire-button:hover {
+        transform: scale(1.1);
+        box-shadow: 0 6px 25px rgba(255, 107, 0, 0.8);
+      }
+      .fire-button:active {
+        transform: scale(0.95);
+        box-shadow: 0 2px 15px rgba(255, 107, 0, 0.6);
+      }
 
-  /* Color grid */
-  .color-grid {
-    display: flex; flex-wrap: wrap; gap: 7px;
-    justify-content: center; max-width: 280px; margin: 0 auto;
-  }
-  .color-swatch {
-    width: 28px; height: 28px; border-radius: 50%;
-    cursor: pointer; border: 3px solid transparent;
-    transition: transform .15s, border-color .15s;
-    position: relative;
-  }
-  .color-swatch:hover { transform: scale(1.2); }
-  .color-swatch.selected {
-    border-color: #fff;
-    transform: scale(1.15);
-    box-shadow: 0 0 0 2px rgba(255,255,255,.4);
-  }
+      /* ── SKIN PICKER ── */
+      .skin-section {
+        margin: 1.2rem 0;
+      }
+      .skin-section-label {
+        color: var(--muted);
+        font-size: 0.75rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        margin-bottom: 0.6rem;
+      }
 
-  /* Pattern grid */
-  .pattern-grid {
-    display: flex; flex-wrap: wrap; gap: 8px;
-    justify-content: center; max-width: 280px; margin: 0 auto;
-  }
-  .pattern-btn {
-    width: 54px; height: 32px; border-radius: 8px;
-    border: 2px solid var(--border);
-    cursor: pointer; overflow: hidden;
-    transition: border-color .15s, transform .15s;
-    position: relative;
-    display: flex; align-items: center; justify-content: center;
-    font-size: .6rem; font-weight: 800; color: rgba(255,255,255,.7);
-    letter-spacing: .05em;
-  }
-  .pattern-btn canvas { position: absolute; inset: 0; }
-  .pattern-btn span { position: relative; z-index:1; text-shadow: 0 1px 3px #000; }
-  .pattern-btn:hover   { transform: scale(1.05); border-color: var(--muted); }
-  .pattern-btn.selected { border-color: #fff; box-shadow: 0 0 0 2px rgba(255,255,255,.3); }
+      /* Color grid */
+      .color-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 7px;
+        justify-content: center;
+        max-width: 280px;
+        margin: 0 auto;
+      }
+      .color-swatch {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        cursor: pointer;
+        border: 3px solid transparent;
+        transition:
+          transform 0.15s,
+          border-color 0.15s;
+        position: relative;
+      }
+      .color-swatch:hover {
+        transform: scale(1.2);
+      }
+      .color-swatch.selected {
+        border-color: #fff;
+        transform: scale(1.15);
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4);
+      }
 
-  /* Preview worm */
-  #skinPreview {
-    margin: 1rem auto 0;
-    display: block;
-  }
+      /* Pattern grid */
+      .pattern-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+        max-width: 280px;
+        margin: 0 auto;
+      }
+      .pattern-btn {
+        width: 54px;
+        height: 32px;
+        border-radius: 8px;
+        border: 2px solid var(--border);
+        cursor: pointer;
+        overflow: hidden;
+        transition:
+          border-color 0.15s,
+          transform 0.15s;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.6rem;
+        font-weight: 800;
+        color: rgba(255, 255, 255, 0.7);
+        letter-spacing: 0.05em;
+      }
+      .pattern-btn canvas {
+        position: absolute;
+        inset: 0;
+      }
+      .pattern-btn span {
+        position: relative;
+        z-index: 1;
+        text-shadow: 0 1px 3px #000;
+      }
+      .pattern-btn:hover {
+        transform: scale(1.05);
+        border-color: var(--muted);
+      }
+      .pattern-btn.selected {
+        border-color: #fff;
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+      }
 
-  /* ── DEATH SCREEN ── */
-  #deathScreen {
-    display: none;
-    position: fixed; inset:0; z-index:200;
-    background: rgba(0,0,0,.75);
-    backdrop-filter: blur(6px);
-    align-items:center; justify-content:center; flex-direction:column; gap:1.2rem;
-  }
-  #deathScreen.show { display:flex; animation: fadeUp .4s ease both; }
-  #deathScreen h2 { font-family:'Fredoka One',cursive; font-size:3rem; color:#ff6b6b; }
-  #deathScreen p  { color:var(--muted); font-size:1.1rem; }
-  #respawnBtn {
-    padding:.75rem 2.5rem;
-    background: linear-gradient(135deg,#3fb950,#2ea043);
-    border:none; border-radius:50px;
-    color:#fff; font-family:'Fredoka One',cursive; font-size:1.3rem;
-    cursor:pointer; box-shadow:0 4px 20px #3fb95060;
-    transition: transform .15s;
-    pointer-events:all;
-  }
-  #respawnBtn:hover { transform:translateY(-2px); }
+      /* Preview worm */
+      #skinPreview {
+        margin: 1rem auto 0;
+        display: block;
+      }
 
-</style>
-</head>
-<body>
+      /* ── DEATH SCREEN ── */
+      #deathScreen {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 200;
+        background: rgba(0, 0, 0, 0.75);
+        backdrop-filter: blur(6px);
+        align-items: center;
+        justify-content: center;
+        flex-direction: column;
+        gap: 1.2rem;
+      }
+      #deathScreen.show {
+        display: flex;
+        animation: fadeUp 0.4s ease both;
+      }
+      #deathScreen h2 {
+        font-family: "Fredoka One", cursive;
+        font-size: 3rem;
+        color: #ff6b6b;
+      }
+      #deathScreen p {
+        color: var(--muted);
+        font-size: 1.1rem;
+      }
+      #respawnBtn {
+        padding: 0.75rem 2.5rem;
+        background: linear-gradient(135deg, #3fb950, #2ea043);
+        border: none;
+        border-radius: 50px;
+        color: #fff;
+        font-family: "Fredoka One", cursive;
+        font-size: 1.3rem;
+        cursor: pointer;
+        box-shadow: 0 4px 20px #3fb95060;
+        transition: transform 0.15s;
+        pointer-events: all;
+      }
+      #respawnBtn:hover {
+        transform: translateY(-2px);
+      }
+    </style>
+  </head>
+  <body>
+    <!-- LOBBY -->
+    <div id="lobby">
+      <div class="lobby-card">
+        <div class="game-title">gusanito.io</div>
+        <p class="lobby-tagline">¡No choques con otros jugadores!</p>
 
-<!-- LOBBY -->
-<div id="lobby">
-  <div class="lobby-card">
-    <div class="game-title">gusanito.io</div>
-    <p class="lobby-tagline">¡No choques con otros jugadores!</p>
+        <div class="input-wrapper">
+          <input
+            id="nickname"
+            type="text"
+            placeholder="Tu apodo"
+            maxlength="20"
+            autocomplete="off"
+          />
+        </div>
 
-    <div class="input-wrapper">
-      <input id="nickname" type="text" placeholder="Tu apodo" maxlength="20" autocomplete="off">
+        <!-- Skin: color -->
+        <div class="skin-section">
+          <div class="skin-section-label">🎨 Color</div>
+          <div class="color-grid" id="colorGrid"></div>
+        </div>
+
+        <!-- Skin: pattern -->
+        <div class="skin-section">
+          <div class="skin-section-label">✨ Patrón</div>
+          <div class="pattern-grid" id="patternGrid"></div>
+        </div>
+
+        <!-- Preview -->
+        <canvas id="skinPreview" width="220" height="56"></canvas>
+
+        <button id="playBtn" style="margin: 0.8rem auto 0">¡Jugar!</button>
+      </div>
     </div>
 
-    <!-- Skin: color -->
-    <div class="skin-section">
-      <div class="skin-section-label">🎨 Color</div>
-      <div class="color-grid" id="colorGrid"></div>
+    <!-- GAME -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- HUD -->
+    <div id="hud" style="display: none">
+      <div id="leaderboard">
+        <h3>🏆 Ranking</h3>
+        <div id="lbRows"></div>
+      </div>
+      <canvas id="minimap"></canvas>
+      <div id="myScore">Puntos: <span id="scoreVal">0</span></div>
+      <div id="ammoBar">
+        <div class="ammo-label">🔥 Fuego <span id="ammoCount">5/5</span></div>
+        <div class="ammo-orbs" id="ammoOrbs"></div>
+        <div class="hints-row">
+          Espacio = disparo &nbsp;|&nbsp; Click = turbo
+        </div>
+      </div>
+      <button id="fireBtn" class="fire-button">🔥</button>
     </div>
 
-    <!-- Skin: pattern -->
-    <div class="skin-section">
-      <div class="skin-section-label">✨ Patrón</div>
-      <div class="pattern-grid" id="patternGrid"></div>
+    <!-- DEATH -->
+    <div id="deathScreen">
+      <h2>💀 ¡Eliminado!</h2>
+      <p id="deathMsg">Chocaste con otro gusano.</p>
+      <button id="respawnBtn">Volver a jugar</button>
     </div>
 
-    <!-- Preview -->
-    <canvas id="skinPreview" width="220" height="56"></canvas>
-
-    <button id="playBtn" style="margin: .8rem auto 0">¡Jugar!</button>
-  </div>
-</div>
-
-<!-- GAME -->
-<canvas id="gameCanvas"></canvas>
-
-<!-- HUD -->
-<div id="hud" style="display:none">
-  <div id="leaderboard">
-    <h3>🏆 Ranking</h3>
-    <div id="lbRows"></div>
-  </div>
-  <canvas id="minimap"></canvas>
-  <div id="myScore">Puntos: <span id="scoreVal">0</span></div>
-  <div id="ammoBar">
-    <div class="ammo-label">🔥 Fuego <span id="ammoCount">5/5</span></div>
-    <div class="ammo-orbs" id="ammoOrbs"></div>
-    <div class="hints-row">Espacio = disparo &nbsp;|&nbsp; Click = turbo</div>
-  </div>
-</div>
-
-<!-- DEATH -->
-<div id="deathScreen">
-  <h2>💀 ¡Eliminado!</h2>
-  <p id="deathMsg">Chocaste con otro gusano.</p>
-  <button id="respawnBtn">Volver a jugar</button>
-</div>
-
-<script src="/socket.io/socket.io.js"></script>
-<script src="game.js"></script>
-</body>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="game.js"></script>
+  </body>
 </html>
