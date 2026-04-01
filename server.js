@@ -106,7 +106,7 @@ const ROCK_RELOCATE_TICKS = 900; // 30 seconds at 30 fps
 // Arrow constants
 const ARROW_SPEED = 14;
 const ARROW_RADIUS = 8;
-const ARROW_LIFETIME = 100;
+const ARROW_LIFETIME = 150;  // 5 seconds at 30fps
 const ARROW_COST = 2;
 const ARROW_DAMAGE = 10;
 const ARROW_MAX_AMMO = 5;
@@ -1118,20 +1118,23 @@ function gameTick() {
     for (const pid in players) {
       if (pid === a.ownerId) continue;
       const target = players[pid];
-      if (!target.alive) continue;
-      const head = target.segments[0];
-      if (circlesOverlap(a.x, a.y, ARROW_RADIUS, head.x, head.y, HEAD_RADIUS)) {
-        // Hit! Reduce score
-        target.score = Math.max(0, target.score - ARROW_DAMAGE);
-        // Shrink target if needed
-        target.length = Math.max(4, target.length - 2);
-        
-        io.emit('arrowHit', JSON.stringify({ x: a.x, y: a.y, targetId: pid }));
-        delete arrows[aid];
-        arrowDelta.push({ type: 'remove', id: aid });
-        hit = true;
-        break;
+      if (!target.alive || !target.segments?.length) continue;
+      // Check vs head and all segments
+      for (let s = 0; s < target.segments.length; s++) {
+        const seg = target.segments[s];
+        if (circlesOverlap(a.x, a.y, ARROW_RADIUS, seg.x, seg.y, s === 0 ? HEAD_RADIUS : SNAKE_RADIUS)) {
+          // Hit! Reduce score
+          target.score = Math.max(0, target.score - ARROW_DAMAGE);
+          target.length = Math.max(4, target.length - 2);
+          
+          io.emit('arrowHit', JSON.stringify({ x: a.x, y: a.y, targetId: pid }));
+          delete arrows[aid];
+          arrowDelta.push({ type: 'remove', id: aid });
+          hit = true;
+          break;
+        }
       }
+      if (hit) break;
     }
     if (!hit) {
       arrowDelta.push({ type: 'update', arrow: { id: a.id, x: a.x, y: a.y, angle: a.angle, ownerId: a.ownerId } });
