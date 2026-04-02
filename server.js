@@ -1063,47 +1063,37 @@ function gameTick() {
     basePacket.rocks = Object.values(rocks);
   }
 
-  // FIX #2: Viewport culling — enviar a cada socket solo los datos visibles
-  // FIX #1: Sin JSON.stringify — Socket.IO serializa nativo
+  // FIX BLOQUEO: Solo enviamos tick a sockets con jugador activo.
+  // Antes se mandaba tick completo a TODOS los sockets (incluyendo conexiones
+  // fantasma de polling de Railway), saturando memoria y matando el proceso.
   for (const [sid, socket] of io.sockets.sockets) {
     const p = players[sid];
 
-    // Si no hay jugador asociado al socket (aún no hizo join) mandamos paquete vacío
-    if (!p || !p.alive || !p.segments.length) {
-      socket.emit('tick', { ...basePacket, players: {} });
-      continue;
-    }
+    // Ignorar sockets sin join o muertos — no necesitan tick
+    if (!p || !p.alive || !p.segments.length) continue;
 
     const px = p.segments[0].x;
     const py = p.segments[0].y;
 
-    // Filtrar jugadores por viewport
     const visiblePlayers = {};
     for (const pid in deltaPlayers) {
       const dp = deltaPlayers[pid];
-      // Siempre incluir al propio jugador
       if (pid === sid) { visiblePlayers[pid] = dp; continue; }
-      // Para otros: usar la cabeza para determinar visibilidad
       const hx = dp.head ? dp.head.x : (dp.segments ? dp.segments[0]?.x : null);
       const hy = dp.head ? dp.head.y : (dp.segments ? dp.segments[0]?.y : null);
       if (hx == null || !inViewport(px, py, hx, hy)) continue;
       visiblePlayers[pid] = dp;
     }
 
-    // FIX #2: Filtrar entidades por viewport
     const packet = {
       ...basePacket,
       players: visiblePlayers,
-      // Filtrar larvas/slugs/worms/ants cercanas
       larvas: basePacket.larvas.filter(e => inViewport(px, py, e.x, e.y)),
       slugs: basePacket.slugs.filter(e => inViewport(px, py, e.x, e.y)),
       worms: basePacket.worms.filter(e => e.head && inViewport(px, py, e.head.x, e.head.y)),
       ants: basePacket.ants.filter(e => inViewport(px, py, e.x, e.y)),
     };
 
-    // FIX CRÍTICO: Sin JSON.stringify — Socket.IO serializa nativo automáticamente.
-    // Antes se mandaba tick como string y otros eventos como objeto, causando
-    // inconsistencia que rompía el parseo en el cliente.
     socket.emit('tick', packet);
   }
 
