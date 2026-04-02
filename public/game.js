@@ -31,6 +31,7 @@ let mines       = {};     // { [id]: {id,x,y,life,color,ownerId} }
 let arrows      = {};     // { [id]: {id,x,y,angle,life,ownerId} }
 let apples      = [];     // incoming list of apples
 let greenApples = [];     // incoming list of green apples
+let goldenApples = [];    // incoming list of golden apples
 let portals     = [];     // incoming list of portals
 let puddles     = [];     // incoming list of puddles
 let larvas      = [];     // incoming list of larvae
@@ -345,6 +346,7 @@ socket.on('init', raw => {
   arrows = {}; (data.arrows || []).forEach(a => { arrows[a.id] = a; });
   apples = data.apples || [];
   greenApples = data.greenApples || [];
+  goldenApples = data.goldenApples || [];
   portals = data.portals || [];
   puddles = data.puddles || [];
   larvas = data.larvas || [];
@@ -437,6 +439,7 @@ socket.on('tick', raw => {
   }
   if (data.apples)      apples = data.apples;
   if (data.greenApples) greenApples = data.greenApples;
+  if (data.goldenApples) goldenApples = data.goldenApples;
   if (data.portals)     portals = data.portals;
   if (data.puddles)     puddles = data.puddles;
   larvas = data.larvas || [];
@@ -625,6 +628,10 @@ function updateBuffUI() {
     buffIndicator.className = 'active green';
     buffIcon.textContent = '🍏';
     buffLabel.textContent = 'LETAL';
+  } else if (me.invisible) {
+    buffIndicator.className = 'active golden';
+    buffIcon.textContent = '👁️';
+    buffLabel.textContent = 'INVISIBILIDAD';
   } else {
     buffIndicator.className = '';
   }
@@ -788,6 +795,30 @@ function drawGreenApple(a) {
   ctx.shadowBlur = 0;
   ctx.fillStyle = '#8b4513';
   ctx.beginPath(); ctx.ellipse(x+3, y-7, 4, 2, -Math.PI/4, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+function drawGoldenApple(a) {
+  if (!isVisible(a.x, a.y, 40)) return;
+  const {x, y} = worldToScreen(a.x, a.y);
+  ctx.save();
+  // Big golden glow
+  ctx.shadowBlur = 25; ctx.shadowColor = '#ffea00';
+  ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); // Double size
+  // Golden gradient
+  const grad = ctx.createRadialGradient(x-5, y-5, 2, x, y, 18);
+  grad.addColorStop(0, '#ffffff');
+  grad.addColorStop(0.3, '#ffea00');
+  grad.addColorStop(1, '#ff9100');
+  ctx.fillStyle = grad;
+  ctx.fill();
+  // Shine overlay
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+  ctx.beginPath(); ctx.ellipse(x-6, y-8, 6, 3, -Math.PI/4, 0, Math.PI*2); ctx.fill();
+  // Stem
+  ctx.fillStyle = '#5d4037';
+  ctx.beginPath(); ctx.ellipse(x+4, y-16, 6, 3, -Math.PI/4, 0, Math.PI*2); ctx.fill();
   ctx.restore();
 }
 
@@ -1172,9 +1203,14 @@ function drawArrow(a) {
 
 function drawSnake(p) {
   if (!p.alive || !p.segments || p.segments.length<2) return;
+  if (p.invisible && p.id !== myId) return; // Completely invisible to others
   const segs=p.segments, isMe=p.id===myId;
   const color=p.color||'#3fb950', pattern=p.pattern||'solid', total=segs.length;
   ctx.save();
+  
+  if (isMe && p.invisible) {
+    ctx.globalAlpha = 0.4; // Semi-transparent for myself
+  }
 
   for (let i=total-1; i>=1; i--) {
     if (!isVisible(segs[i].x,segs[i].y,30)) continue;
@@ -1348,7 +1384,7 @@ function drawMinimap() {
   mmCtx.clearRect(0,0,W,H);
   mmCtx.fillStyle='rgba(0,0,0,.8)'; mmCtx.fillRect(0,0,W,H);
   for (const fid in foods){const f=foods[fid];mmCtx.fillStyle=f.color;mmCtx.fillRect(f.x*sx,f.y*sy,1.5,1.5);}
-  for (const pid in players){const p=players[pid];if(!p.alive||!p.segments?.length)continue;const h=p.segments[0],isMe=pid===myId;mmCtx.beginPath();mmCtx.arc(h.x*sx,h.y*sy,isMe?4:2.5,0,Math.PI*2);mmCtx.fillStyle=isMe?'#3fb950':p.color;mmCtx.fill();}
+  for (const pid in players){const p=players[pid];if(!p.alive||!p.segments?.length)continue;if(p.invisible && pid !== myId)continue;const h=p.segments[0],isMe=pid===myId;mmCtx.beginPath();mmCtx.arc(h.x*sx,h.y*sy,isMe?4:2.5,0,Math.PI*2);mmCtx.fillStyle=isMe?'#3fb950':p.color;mmCtx.fill();}
   // Fireballs on minimap
   for (const fbid in fireballs){const fb=fireballs[fbid];mmCtx.fillStyle='#ff6b00';mmCtx.beginPath();mmCtx.arc(fb.x*sx,fb.y*sy,2.5,0,Math.PI*2);mmCtx.fill();}
   // Mines on minimap
@@ -1357,6 +1393,8 @@ function drawMinimap() {
   for (const a of apples){mmCtx.fillStyle='#ff3333';mmCtx.beginPath();mmCtx.arc(a.x*sx,a.y*sy,3.5,0,Math.PI*2);mmCtx.fill();}
   // Green Apples on minimap
   for (const a of greenApples){mmCtx.fillStyle='#32cd32';mmCtx.beginPath();mmCtx.arc(a.x*sx,a.y*sy,3.5,0,Math.PI*2);mmCtx.fill();}
+  // Golden Apples on minimap
+  for (const ga of goldenApples){mmCtx.fillStyle='#ffea00';mmCtx.beginPath();mmCtx.arc(ga.x*sx,ga.y*sy,5,0,Math.PI*2);mmCtx.fill();}
   mmCtx.strokeStyle='rgba(255,255,255,.3)';mmCtx.lineWidth=1;
   mmCtx.strokeRect((cameraX-canvas.width/2)*sx,(cameraY-canvas.height/2)*sy,canvas.width*sx,canvas.height*sy);
 }
@@ -1406,6 +1444,9 @@ function loop() {
 
     // Green Apples
     for (const a of greenApples) drawGreenApple(a);
+
+    // Golden Apples
+    for (const ga of goldenApples) drawGoldenApple(ga);
 
     // Portals
     for (const port of portals) drawPortal(port);

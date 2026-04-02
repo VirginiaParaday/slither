@@ -119,6 +119,7 @@ const fireballs = {};   // { [id]: Fireball }
 const mines = {};   // { [id]: Mine }
 const apples = {};   // { [id]: Apple }
 const greenApples = {}; // { [id]: GreenApple }
+const goldenApples = {}; // { [id]: GoldenApple }
 const portals = {}; // { [id]: Portal }
 const puddles = {}; // { [id]: Puddle }
 const larvas = {};  // { [id]: Larva }
@@ -130,6 +131,8 @@ let fireballId = 0;
 let mineId = 0;
 let appleId = 0;
 let greenAppleId = 0;
+let goldenAppleId = 0;
+let goldenAppleSpawnTimer = 20 * 30; // 20 seconds at 30 fps
 let portalId = 0;
 let puddleId = 0;
 let larvaId = 0;
@@ -185,6 +188,15 @@ function spawnGreenApple() {
     x: rand(50, WORLD_WIDTH - 50),
     y: rand(50, WORLD_HEIGHT - 50),
     life: GREEN_APPLE_LIFETIME
+  };
+}
+function spawnGoldenApple() {
+  const id = goldenAppleId++;
+  goldenApples[id] = {
+    id,
+    x: rand(50, WORLD_WIDTH - 50),
+    y: rand(50, WORLD_HEIGHT - 50),
+    life: 9999999 // It stays until eaten
   };
 }
 function spawnPortal() {
@@ -314,6 +326,7 @@ function createPlayer(id, name, color, pattern) {
     mineCount: 0,             // active mines placed by this player
     protection: 0,             // shield ticks remaining
     lethal: 0,                 // lethal ticks remaining
+    invisible: 0,              // invisible ticks remaining
     portalCooldown: 0,
     entrancePortal: -1,
     exitPortal: -1,
@@ -374,6 +387,16 @@ function gameTick() {
   if (destructorRespawnTimer > 0) {
     destructorRespawnTimer--;
     if (destructorRespawnTimer <= 0) spawnDestructor();
+  }
+
+  if (Object.keys(goldenApples).length === 0) {
+    if (goldenAppleSpawnTimer > 0) {
+      goldenAppleSpawnTimer--;
+      if (goldenAppleSpawnTimer <= 0) {
+        spawnGoldenApple();
+        staticChanged = true;
+      }
+    }
   }
 
   const deltaPlayers = {};
@@ -624,6 +647,10 @@ function gameTick() {
     }
 
     let speed = (p.boosting && p.length > 10) ? BOOST_SPEED : SNAKE_SPEED;
+    if (p.invisible > 0) {
+      p.invisible--;
+      speed *= 1.3;
+    }
     if (p.slow > 0) speed *= 0.5;
 
     let nx = head.x + Math.cos(p.angle) * speed;
@@ -747,6 +774,7 @@ function gameTick() {
       mines: MAX_MINES - p.mineCount, maxMines: MAX_MINES,
       protected: (p.protection > 0),
       lethal: (p.lethal > 0),
+      invisible: (p.invisible > 0),
       isNpc: p.isNpc,
       isDestructor: p.isDestructor,
       hp: p.hp,
@@ -863,6 +891,8 @@ function gameTick() {
         A._hitCooldown = A._hitCooldown || {};
         const cooldown = A._hitCooldown[p.id] || 0;
         if (cooldown > 0) { A._hitCooldown[p.id]--; continue; }
+        if (p.invisible > 0) continue; // Immune to ants
+
         if (circlesOverlap(head.x, head.y, HEAD_RADIUS, A.x, A.y, ANT_RADIUS)) {
           // Damage
           const dmg = Math.min(ANT_DAMAGE, p.length - 4);
@@ -906,6 +936,15 @@ function gameTick() {
         p.lethal = LETHAL_TIME;
         delete greenApples[gid];
         spawnGreenApple();
+        staticChanged = true;
+      }
+    }
+    for (const gaid in goldenApples) {
+      const ga = goldenApples[gaid];
+      if (circlesOverlap(head.x, head.y, HEAD_RADIUS, ga.x, ga.y, APPLE_RADIUS * 2)) {
+        p.invisible = 25 * 30; // 25 seconds
+        delete goldenApples[gaid];
+        goldenAppleSpawnTimer = 15 * 30; // 15 seconds cooldown
         staticChanged = true;
       }
     }
@@ -1014,6 +1053,7 @@ function gameTick() {
       const pa = players[pids[i]], pb = players[pids[j]];
       if (!pa.alive || !pb.alive) continue;
       if (pa.isNpc && pb.isNpc) continue;
+      if ((pa.isNpc && pb.invisible > 0) || (pb.isNpc && pa.invisible > 0)) continue; // Ignore NPCs if invisible
       const headA = pa.segments[0];
       const startSeg = pb.isNpc ? 0 : 2;
       for (let s = startSeg; s < pb.segments.length; s++) {
@@ -1148,6 +1188,7 @@ function gameTick() {
   if (staticChanged) {
     tickPacket.apples = Object.values(apples);
     tickPacket.greenApples = Object.values(greenApples);
+    tickPacket.goldenApples = Object.values(goldenApples);
     tickPacket.portals = Object.values(portals);
     tickPacket.puddles = Object.values(puddles);
     staticChanged = false;
@@ -1299,6 +1340,7 @@ io.on('connection', socket => {
       worldHeight: WORLD_HEIGHT,
       apples: Object.values(apples),
       greenApples: Object.values(greenApples),
+      goldenApples: Object.values(goldenApples),
       portals: Object.values(portals),
       puddles: Object.values(puddles),
       larvas: Object.values(larvas),
