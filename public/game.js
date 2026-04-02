@@ -260,7 +260,8 @@ if (arrowBtn) {
 // ── Fireball shooting ─────────────────────────────────────────────
 function shootFireball() {
   const me = players[myId];
-  if (!me || !me.alive || me.ammo <= 0) return;
+  if (!me || !me.alive) return;
+  if (!me.invisible && me.ammo <= 0) return;
   socket.emit('fireball');
   // Optimistic UI: animate the next loaded orb
   const orbEls = ammoOrbs.querySelectorAll('.ammo-orb.loaded');
@@ -289,7 +290,8 @@ function placeMine() {
 
 function shootArrow() {
   const me = players[myId];
-  if (!me || !me.alive || me.score < 20 || me.arrowAmmo <= 0) return;
+  if (!me || !me.alive) return;
+  if (!me.invisible && (me.score < 50 || me.arrowAmmo <= 0)) return;
   socket.emit('arrow');
   // Optimistic UI
   const orbEls = arrowOrbs.querySelectorAll('.arrow-orb.loaded');

@@ -362,7 +362,8 @@ function spawnDestructor() {
 
 function placeMine(playerId) {
   const p = players[playerId];
-  if (!p || !p.alive || p.mineCount >= MAX_MINES) return null;
+  if (!p || !p.alive) return null;
+  if (p.mineCount >= MAX_MINES && !(p.invisible > 0)) return null;
 
   const tail = p.segments[p.segments.length - 1];
   const mid = mineId++;
@@ -972,6 +973,9 @@ function gameTick() {
       if (pid === fb.ownerId) continue;
       const target = players[pid];
       if (!target.alive || !target.segments?.length) continue;
+      
+      // Destructor/NPCs fireballs dont hurt golden apple players
+      if (target.invisible > 0 && players[fb.ownerId]?.isNpc) continue;
 
       // Check vs every segment
       for (let s = 0; s < target.segments.length; s++) {
@@ -1125,6 +1129,9 @@ function gameTick() {
       if (pid === m.ownerId) continue; // owner's mines don't hurt owner
       const target = players[pid];
       if (!target.alive || !target.segments?.length) continue;
+
+      // Destructor/NPCs mines dont hurt golden apple players
+      if (target.invisible > 0 && players[m.ownerId]?.isNpc) continue;
 
       // Check vs every segment
       for (let s = 0; s < target.segments.length; s++) {
@@ -1366,8 +1373,10 @@ io.on('connection', socket => {
 
   socket.on('fireball', () => {
     const p = players[socket.id];
-    if (!p || !p.alive || p.ammo <= 0) return;
-    p.ammo--;
+    if (!p || !p.alive) return;
+    if (p.ammo <= 0 && !(p.invisible > 0)) return;
+    
+    if (!(p.invisible > 0)) p.ammo--;
     const head = p.segments[0];
     const fbid = fireballId++;
     fireballs[fbid] = {
@@ -1384,8 +1393,7 @@ io.on('connection', socket => {
   });
 
   socket.on('mine', () => {
-    const p = players[socket.id];
-    if (!p || !p.alive || p.mineCount >= MAX_MINES) return;
+    // Limits handled inside placeMine()
     const mine = placeMine(socket.id);
     if (mine) {
       // Broadcast new mine to all
@@ -1395,23 +1403,29 @@ io.on('connection', socket => {
 
   socket.on('arrow', () => {
     const p = players[socket.id];
-    if (!p || !p.alive || p.score < 50 || p.arrowAmmo <= 0) return;
+    if (!p || !p.alive) return;
+    const isGolden = p.invisible > 0;
+    if (!isGolden && (p.score < 50 || p.arrowAmmo <= 0)) return;
     
-    p.arrowAmmo--;
-    p.score = Math.max(0, p.score - ARROW_COST);
-    // Update length based on score -> length -= ARROW_COST * 2
-    p.length = Math.max(4, p.length - ARROW_COST * 2);
+    if (!isGolden) {
+      p.arrowAmmo--;
+      p.score = Math.max(0, p.score - ARROW_COST);
+      // Update length based on score -> length -= ARROW_COST * 2
+      p.length = Math.max(4, p.length - ARROW_COST * 2);
+    }
     
     // Drop food to reimburse the length that was burnt as fuel for the arrow
-    for (let k = 0; k < ARROW_COST * 2; k += 2) {
-      if (p.segments.length > 4) {
-        const idx = p.segments.length - 1; 
-        const tail = p.segments[idx];
-        if (!tail) break;
-        p.segments.pop(); // Remove segment visually to make food drop immediate
-        const fid = foodId++;
-        foods[fid] = { id: fid, x: tail.x, y: tail.y, color: p.color, value: 1, life: rand(300, 900) };
-        pendingFood.push({ type: 'add', food: foods[fid] });
+    if (!isGolden) {
+      for (let k = 0; k < ARROW_COST * 2; k += 2) {
+        if (p.segments.length > 4) {
+          const idx = p.segments.length - 1; 
+          const tail = p.segments[idx];
+          if (!tail) break;
+          p.segments.pop(); // Remove segment visually to make food drop immediate
+          const fid = foodId++;
+          foods[fid] = { id: fid, x: tail.x, y: tail.y, color: p.color, value: 1, life: rand(300, 900) };
+          pendingFood.push({ type: 'add', food: foods[fid] });
+        }
       }
     }
     
