@@ -1,19 +1,25 @@
 //Server.js
 const express = require('express');
-const compression = require('compression');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const app = express();
 const server = http.createServer(app);
+
+// ── Socket.IO config optimizada para Railway ──────────────────────
+// Railway usa un proxy inverso (Nginx) que puede interferir con WebSocket.
+// 1. transports polling primero: handshake HTTP funciona aunque el WS upgrade falle.
+// 2. perMessageDeflate: false — evita que el proxy corrompa frames comprimidos.
+// 3. httpCompression: false — sin gzip en respuestas HTTP de polling.
+// 4. Sin compression() de Express — no comprimimos nada en el servidor.
 const io = new Server(server, {
   cors: { origin: '*', methods: ['GET', 'POST'] },
   allowEIO3: true,
+  transports: ['polling', 'websocket'],
   pingTimeout: 60000,
   pingInterval: 25000,
-  // FIX #1: Socket.IO maneja serialización nativa — sin JSON.stringify manual.
-  // Mantenemos perMessageDeflate apagado debido a problemas de proxy con WebSocket frame decoding en Railway.
-  perMessageDeflate: false
+  perMessageDeflate: false,
+  httpCompression: false
 });
 
 // Middleware
