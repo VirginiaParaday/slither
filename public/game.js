@@ -269,22 +269,20 @@ document.getElementById('nickname').addEventListener('keydown', e => { if (e.key
 function joinGame() {
   const name = document.getElementById('nickname').value.trim() || 'Snake';
   lobby.style.display = 'none'; hud.style.display = 'block';
-  // FIX #1 (cliente): Enviar objeto nativo — Socket.IO serializa internamente
   socket.emit('join', { name, color: selectedColor, pattern: selectedPattern });
 }
 
 // ── Socket events ─────────────────────────────────────────────────
-// FIX #1 (cliente): Eliminar todos los `typeof raw === 'string' ? JSON.parse(raw) : raw`
-// Socket.IO entrega objetos JavaScript directamente — ya no son strings.
 socket.on('playerJoined', data => {
-  console.log('🚀 Jugador unido:', data.name);
+  console.log('🚀 Jugador unido:', data.name || data);
 });
 socket.on('connect', () => console.log('✅ Socket conectado:', socket.id));
 socket.on('connect_error', (err) => console.error('❌ Socket error:', err));
 
 let isInitialized = false;
-socket.on('init', data => {
+socket.on('init', raw => {
   if (isInitialized) return;
+  const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
   console.log('📦 Init recibido:', data.id);
   myId = data.id;
   worldW = data.worldWidth || 3000;
@@ -324,7 +322,8 @@ socket.on('init', data => {
 });
 
 let lastTickLog = 0;
-socket.on('tick', data => {
+socket.on('tick', raw => {
+  const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
   try {
     if (!data) return;
     if (Date.now() - lastTickLog > 5000) {
@@ -426,7 +425,6 @@ socket.on('tick', data => {
   }
 });
 
-// FIX #1 (cliente): Sin JSON.parse — datos llegan como objetos
 socket.on('fireballSpawned', fb => { fireballs[fb.id] = fb; });
 socket.on('mineSpawned', m => { mines[m.id] = m; });
 socket.on('arrowSpawned', a => { arrows[a.id] = a; });

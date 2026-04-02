@@ -1094,7 +1094,8 @@ function gameTick() {
       ants: basePacket.ants.filter(e => inViewport(px, py, e.x, e.y)),
     };
 
-    socket.emit('tick', packet);
+    // FIX: Usamos stringify para forzar un solo frame de texto (evita fallos de proxy en Railway)
+    socket.emit('tick', JSON.stringify(packet));
   }
 
   // Notificar muertes individualmente (sin culling — son mensajes críticos)
@@ -1121,8 +1122,8 @@ io.on('connection', socket => {
       .sort((a, b) => a.d - b.d).slice(0, 200)
       .map(f => [f.id, f.x, f.y, f.v]);
 
-    // FIX #1: Sin JSON.stringify — Socket.IO serializa automáticamente
-    socket.emit('init', {
+    // FIX: Usamos stringify para forzar un solo frame de texto
+    socket.emit('init', JSON.stringify({
       id: socket.id,
       foods: foodList,
       players: Object.values(players).map(p => ({
@@ -1142,10 +1143,9 @@ io.on('connection', socket => {
       ants: Object.values(ants),
       rocks: Object.values(rocks),
       arrows: Object.values(arrows)
-    });
+    }));
 
     console.log(`🚀 Init sent to ${socket.id} (${foodList.length} foods)`);
-    // FIX #1: Sin JSON.stringify
     io.emit('playerJoined', { id: socket.id, name: player.name });
   });
 
