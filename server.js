@@ -10,9 +10,9 @@ const io = new Server(server, {
   allowEIO3: true,
   pingTimeout: 60000,
   pingInterval: 25000,
-  // FIX #1: Dejamos que Socket.IO maneje serialización — sin JSON.stringify manual.
-  // perMessageDeflate activo con threshold alto para no comprimir paquetes pequeños.
-  perMessageDeflate: { threshold: 2048 }
+  // FIX #1: Socket.IO maneja serialización nativa — sin JSON.stringify manual.
+  // Mantenemos perMessageDeflate apagado debido a problemas de proxy con WebSocket frame decoding en Railway.
+  perMessageDeflate: false
 });
 
 // Middleware
