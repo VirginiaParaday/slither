@@ -1,11 +1,14 @@
 // ── game.js ──────────────────────────────────────────────────────
-// FIX #1 (cliente): Eliminar todos los JSON.parse/JSON.stringify redundantes.
-// Socket.IO ya entrega objetos nativos — no necesitamos deserializar manualmente.
+// FIX RAILWAY: Forzar polling como transporte inicial y deshabilitar el upgrade
+// a WebSocket. El proxy de Railway corrompe los frames WebSocket comprimidos
+// causando "Could not decode a text frame as UTF-8" y pantalla negra.
+// Con polling puro la conexión es estable aunque algo más lenta.
 const socket = io({
-  upgrade: true,
+  transports: ['polling'],   // solo polling — sin WebSocket upgrade en Railway
+  upgrade: false,            // nunca intentar upgrade a WebSocket
   reconnection: true,
   reconnectionAttempts: 10,
-  reconnectionDelay: 1000
+  reconnectionDelay: 1500
 });
 
 // DOM
@@ -276,10 +279,19 @@ function joinGame() {
 socket.on('playerJoined', data => {
   console.log('🚀 Jugador unido:', data.name || data);
 });
-socket.on('connect', () => console.log('✅ Socket conectado:', socket.id));
-socket.on('connect_error', (err) => console.error('❌ Socket error:', err));
-
 let isInitialized = false;
+socket.on('connect', () => {
+  console.log('✅ Socket conectado:', socket.id);
+  // FIX RAILWAY: Resetear isInitialized en cada (re)conexión para que
+  // el servidor pueda mandar un nuevo init y el juego se muestre.
+  isInitialized = false;
+});
+socket.on('connect_error', (err) => console.error('❌ Socket error:', err));
+socket.on('disconnect', (reason) => {
+  console.warn('⚠️ Desconectado:', reason);
+  isInitialized = false;
+});
+
 socket.on('init', data => {
   // FIX CRÍTICO: El servidor ya no usa JSON.stringify — recibimos objeto nativo.
   // Mantenemos el fallback por si acaso, pero data ya será un objeto.
