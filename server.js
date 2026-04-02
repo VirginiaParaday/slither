@@ -532,8 +532,10 @@ function gameTick() {
     if (!p.isNpc && p.dragTicks > 0) { p.dragTicks--; p.targetAngle = p.dragAngle; }
 
     let diff = p.targetAngle - p.angle;
-    while (diff > Math.PI) diff -= 2 * Math.PI;
-    while (diff < -Math.PI) diff += 2 * Math.PI;
+    // FIX: Secure normalization (prevent floating point infinite while-loop)
+    diff = ((diff + Math.PI) % (2 * Math.PI)) - Math.PI;
+    if (diff > Math.PI) diff -= 2 * Math.PI;
+    if (diff < -Math.PI) diff += 2 * Math.PI;
     p.angle += Math.sign(diff) * Math.min(Math.abs(diff), 0.10);
 
     const head = p.segments[0];
@@ -593,7 +595,10 @@ function gameTick() {
     }
 
     p.segments.unshift({ x: nx, y: ny });
-    while (p.segments.length > p.length) p.segments.pop();
+    const targetLen = Math.max(0, isNaN(p.length) ? 4 : p.length);
+    while (p.segments.length > targetLen) {
+      if (!p.segments.pop()) break;
+    }
 
     if (p.protection > 0) p.protection--;
     if (p.lethal > 0) p.lethal--;
@@ -1149,7 +1154,7 @@ io.on('connection', socket => {
     const { angle, boosting } = data || {};
     const p = players[socket.id];
     if (!p || !p.alive) return;
-    if (typeof angle === 'number') p.targetAngle = angle;
+    if (typeof angle === 'number' && isFinite(angle)) p.targetAngle = angle;
     if (typeof boosting === 'boolean') p.boosting = boosting;
   });
 
