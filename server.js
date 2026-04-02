@@ -1,10 +1,8 @@
 const express = require('express');
 const compression = require('compression');
-
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
-
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -12,7 +10,9 @@ const io = new Server(server, {
   allowEIO3: true,
   pingTimeout: 60000,
   pingInterval: 25000,
-  perMessageDeflate: false // Disabled binary compression for text frame compatibility (JSON only)
+  // FIX #1: Dejamos que Socket.IO maneje serialización — sin JSON.stringify manual.
+  // perMessageDeflate activo con threshold alto para no comprimir paquetes pequeños.
+  perMessageDeflate: { threshold: 2048 }
 });
 
 // Middleware
@@ -22,7 +22,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ── Constants ────────────────────────────────────────────────────
 const WORLD_WIDTH = 3000;
 const WORLD_HEIGHT = 3000;
-const TICK_RATE = 1000 / 30;
+const TARGET_TICK_MS = 1000 / 30; // 33.33ms
 const FOOD_COUNT = 400;
 const SEGMENT_SPACING = 8;
 const SNAKE_SPEED = 3.2;
@@ -31,11 +31,16 @@ const SNAKE_RADIUS = 9;
 const FOOD_RADIUS = 5;
 const HEAD_RADIUS = 11;
 
+// Viewport culling margin (px más allá de lo visible del cliente)
+const VIEWPORT_HALF_W = 700;
+const VIEWPORT_HALF_H = 500;
+const VIEWPORT_MARGIN = 200; // extra margen de seguridad
+
 // Apple constants
 const APPLE_COUNT = 6;
 const APPLE_RADIUS = 9;
-const APPLE_LIFETIME = 600;    // 10s at 30fps
-const PROTECTION_TIME = 250;    // 5s at 30fps
+const APPLE_LIFETIME = 600;
+const PROTECTION_TIME = 250;
 
 // Green Apple constants
 const GREEN_APPLE_COUNT = 3;
@@ -64,7 +69,7 @@ const SLUG_COUNT = 8;
 const SLUG_RADIUS = 14;
 const SLUG_SPEED = 0.7;
 const SLUG_DAMAGE = 15;
-const SLUG_HIT_COOLDOWN = 90; // ticks between hits (~3 sec)
+const SLUG_HIT_COOLDOWN = 90;
 
 // Earthworm constants
 const WORM_COUNT = 10;
@@ -72,7 +77,7 @@ const WORM_SEGS = 12;
 const WORM_RADIUS = 7;
 const WORM_SPEED = 2.7;
 const WORM_SEG_DIST = 10;
-const WORM_VALUE = 10; // double larva
+const WORM_VALUE = 10;
 
 // Ant constants
 const ANT_COUNT = 10;
@@ -80,33 +85,33 @@ const ANT_RADIUS = 10;
 const ANT_SPEED = 3.5;
 const ANT_DAMAGE = 25;
 const ANT_DRAG_TICKS = 60;
-const ANT_MOVE_TICKS = 25; // ticks moving per burst
-const ANT_PAUSE_TICKS = 15; // ticks pausing per burst
+const ANT_MOVE_TICKS = 25;
+const ANT_PAUSE_TICKS = 15;
 const ANT_HIT_COOLDOWN = 120;
 
 // Fireball constants
-const FIREBALL_SPEED = 9;      // px/tick
+const FIREBALL_SPEED = 9;
 const FIREBALL_RADIUS = 10;
-const FIREBALL_LIFETIME = 90;     // ticks (~3 seconds at 30fps)
-const FIREBALL_DAMAGE = 8;      // segments removed on hit
+const FIREBALL_LIFETIME = 90;
+const FIREBALL_DAMAGE = 8;
 const MAX_AMMO = 5;
-const AMMO_PER_FOOD = 1;      // ammo recharged per food eaten
+const AMMO_PER_FOOD = 1;
 
 // Mine constants
 const MINE_RADIUS = 12;
-const MINE_LIFETIME = 120;    // ticks (~4 seconds at 30fps)
-const MINE_DAMAGE = 10;     // segments removed on hit
-const MAX_MINES = 3;      // max mines a player can have active
+const MINE_LIFETIME = 120;
+const MINE_DAMAGE = 10;
+const MAX_MINES = 3;
 
 // Rock constants
 const ROCK_COUNT = 20;
 const ROCK_RADIUS = 35;
-const ROCK_RELOCATE_TICKS = 900; // 30 seconds at 30 fps
+const ROCK_RELOCATE_TICKS = 900;
 
 // Arrow constants
 const ARROW_SPEED = 14;
 const ARROW_RADIUS = 8;
-const ARROW_LIFETIME = 150;  // 5 seconds at 30fps
+const ARROW_LIFETIME = 150;
 const ARROW_COST = 5;
 const ARROW_DAMAGE = 10;
 const ARROW_MAX_AMMO = 5;
@@ -115,24 +120,24 @@ const ARROW_RECHARGE_SCORE = 5;
 // ── State ────────────────────────────────────────────────────────
 const players = {};
 const foods = {};
-const fireballs = {};   // { [id]: Fireball }
-const mines = {};   // { [id]: Mine }
-const apples = {};   // { [id]: Apple }
-const greenApples = {}; // { [id]: GreenApple }
-const goldenApples = {}; // { [id]: GoldenApple }
-const portals = {}; // { [id]: Portal }
-const puddles = {}; // { [id]: Puddle }
-const larvas = {};  // { [id]: Larva }
-const slugs  = {};  // { [id]: Slug }
-const worms  = {};  // { [id]: Worm }
-const ants   = {};  // { [id]: Ant }
+const fireballs = {};
+const mines = {};
+const apples = {};
+const greenApples = {};
+const goldenApples = {};
+const portals = {};
+const puddles = {};
+const larvas = {};
+const slugs = {};
+const worms = {};
+const ants = {};
 let foodId = 0;
 let fireballId = 0;
 let mineId = 0;
 let appleId = 0;
 let greenAppleId = 0;
 let goldenAppleId = 0;
-let goldenAppleSpawnTimer = 20 * 30; // 20 seconds at 30 fps
+let goldenAppleSpawnTimer = 20 * 30;
 let portalId = 0;
 let puddleId = 0;
 let larvaId = 0;
@@ -142,7 +147,7 @@ let antId = 0;
 let rockId = 0;
 const rocks = {};
 let rockRelocateTimer = 0;
-let staticChanged = true; // Force first update
+let staticChanged = true;
 const BOSS_ID = 'boss_devorador';
 const BOSS_DESTRUCTOR_ID = 'boss_destructor';
 let destructorRespawnTimer = 0;
@@ -150,6 +155,10 @@ let arrowId = 0;
 const arrows = {};
 const pendingFood = [];
 
+// FIX #5: Variables para el loop de tiempo real con hrtime
+let lastTickTime = process.hrtime.bigint();
+let tickAccumulator = 0n;
+const TARGET_TICK_NS = BigInt(Math.round(TARGET_TICK_MS * 1e6)); // nanosegundos
 
 // ── Helpers ──────────────────────────────────────────────────────
 const rand = (min, max) => Math.random() * (max - min) + min;
@@ -161,6 +170,12 @@ const COLORS = [
   '#ED4C67', '#F79F1F', '#A3CB38', '#1289A7', '#C4E538'
 ];
 function randomColor() { return COLORS[Math.floor(Math.random() * COLORS.length)]; }
+
+// FIX #2: Función de viewport culling — filtra entidades fuera del area visible del jugador
+function inViewport(px, py, entityX, entityY, margin = VIEWPORT_MARGIN) {
+  return Math.abs(entityX - px) <= VIEWPORT_HALF_W + margin &&
+    Math.abs(entityY - py) <= VIEWPORT_HALF_H + margin;
+}
 
 function spawnFood(id) {
   foods[id] = {
@@ -174,66 +189,31 @@ function spawnFood(id) {
 }
 function spawnApple() {
   const id = appleId++;
-  apples[id] = {
-    id,
-    x: rand(50, WORLD_WIDTH - 50),
-    y: rand(50, WORLD_HEIGHT - 50),
-    life: APPLE_LIFETIME
-  };
+  apples[id] = { id, x: rand(50, WORLD_WIDTH - 50), y: rand(50, WORLD_HEIGHT - 50), life: APPLE_LIFETIME };
 }
 function spawnGreenApple() {
   const id = greenAppleId++;
-  greenApples[id] = {
-    id,
-    x: rand(50, WORLD_WIDTH - 50),
-    y: rand(50, WORLD_HEIGHT - 50),
-    life: GREEN_APPLE_LIFETIME
-  };
+  greenApples[id] = { id, x: rand(50, WORLD_WIDTH - 50), y: rand(50, WORLD_HEIGHT - 50), life: GREEN_APPLE_LIFETIME };
 }
 function spawnGoldenApple() {
   const id = goldenAppleId++;
-  goldenApples[id] = {
-    id,
-    x: rand(50, WORLD_WIDTH - 50),
-    y: rand(50, WORLD_HEIGHT - 50),
-    life: 9999999 // It stays until eaten
-  };
+  goldenApples[id] = { id, x: rand(50, WORLD_WIDTH - 50), y: rand(50, WORLD_HEIGHT - 50), life: 9999999 };
 }
 function spawnPortal() {
   const id = portalId++;
-  portals[id] = {
-    id,
-    x: rand(100, WORLD_WIDTH - 100),
-    y: rand(100, WORLD_HEIGHT - 100),
-    life: PORTAL_LIFETIME + rand(-30, 30) // slight variance so not all pop instantly
-  };
+  portals[id] = { id, x: rand(100, WORLD_WIDTH - 100), y: rand(100, WORLD_HEIGHT - 100), life: PORTAL_LIFETIME + rand(-30, 30) };
 }
 function spawnPuddle() {
   const id = puddleId++;
-  puddles[id] = {
-    id,
-    x: rand(150, WORLD_WIDTH - 150),
-    y: rand(150, WORLD_HEIGHT - 150),
-    life: PUDDLE_LIFETIME + rand(-30, 30)
-  };
+  puddles[id] = { id, x: rand(150, WORLD_WIDTH - 150), y: rand(150, WORLD_HEIGHT - 150), life: PUDDLE_LIFETIME + rand(-30, 30) };
 }
 function spawnLarva() {
   const id = larvaId++;
-  larvas[id] = {
-    id,
-    x: rand(100, WORLD_WIDTH - 100),
-    y: rand(100, WORLD_HEIGHT - 100),
-    angle: rand(0, Math.PI * 2)
-  };
+  larvas[id] = { id, x: rand(100, WORLD_WIDTH - 100), y: rand(100, WORLD_HEIGHT - 100), angle: rand(0, Math.PI * 2) };
 }
 function spawnSlug() {
   const id = slugId++;
-  slugs[id] = {
-    id,
-    x: rand(150, WORLD_WIDTH - 150),
-    y: rand(150, WORLD_HEIGHT - 150),
-    angle: rand(0, Math.PI * 2)
-  };
+  slugs[id] = { id, x: rand(150, WORLD_WIDTH - 150), y: rand(150, WORLD_HEIGHT - 150), angle: rand(0, Math.PI * 2) };
 }
 function spawnWorm() {
   const id = wormId++;
@@ -259,32 +239,16 @@ function initFood() {
 
 function spawnAnt() {
   const id = antId++;
-  ants[id] = {
-    id,
-    x: rand(150, WORLD_WIDTH - 150),
-    y: rand(150, WORLD_HEIGHT - 150),
-    angle: rand(0, Math.PI * 2),
-    moveTicks: ANT_MOVE_TICKS,
-    pauseTicks: 0
-  };
+  ants[id] = { id, x: rand(150, WORLD_WIDTH - 150), y: rand(150, WORLD_HEIGHT - 150), angle: rand(0, Math.PI * 2), moveTicks: ANT_MOVE_TICKS, pauseTicks: 0 };
 }
-function initAnts() {
-  for (let i = 0; i < ANT_COUNT; i++) spawnAnt();
-}
+function initAnts() { for (let i = 0; i < ANT_COUNT; i++) spawnAnt(); }
 
 function spawnRocks() {
   for (let i = 0; i < ROCK_COUNT; i++) {
     const id = rockId++;
-    rocks[id] = {
-      id,
-      x: rand(100, WORLD_WIDTH - 100),
-      y: rand(100, WORLD_HEIGHT - 100),
-      radius: ROCK_RADIUS + rand(-5, 5),
-      rotation: rand(0, Math.PI * 2)
-    };
+    rocks[id] = { id, x: rand(100, WORLD_WIDTH - 100), y: rand(100, WORLD_HEIGHT - 100), radius: ROCK_RADIUS + rand(-5, 5), rotation: rand(0, Math.PI * 2) };
   }
 }
-
 function relocateRocks() {
   for (const id in rocks) {
     rocks[id].x = rand(100, WORLD_WIDTH - 100);
@@ -294,93 +258,97 @@ function relocateRocks() {
   staticChanged = true;
   console.log('🌑 Rocks relocated');
 }
-
-function initRocks() {
-  spawnRocks();
-}
+function initRocks() { spawnRocks(); }
 
 function createPlayer(id, name, color, pattern) {
-  const safeName = Array.from(name).slice(0, 15).join(''); // Safe slice for emojis/surrogate pairs
+  const safeName = Array.from(name).slice(0, 15).join('');
   const isMaury = safeName.toLowerCase() === 'maury';
-
   const startX = rand(300, WORLD_WIDTH - 300);
   const startY = rand(300, WORLD_HEIGHT - 300);
   const segments = [];
   for (let i = 0; i < 10; i++) segments.push({ x: startX, y: startY + i * SEGMENT_SPACING });
   return {
-    id,
-    name: safeName,
+    id, name: safeName,
     color: color || randomColor(),
     pattern: pattern || 'solid',
-    segments,
-    angle: -Math.PI / 2,
-    targetAngle: -Math.PI / 2,
+    segments, angle: -Math.PI / 2, targetAngle: -Math.PI / 2,
     score: isMaury ? 100 : 0,
-    boosting: false,
-    alive: true,
+    boosting: false, alive: true,
     length: isMaury ? 210 : 10,
-    ammo: MAX_AMMO,      // current fireball charges
-    maxAmmo: MAX_AMMO,
-    mines: MAX_MINES,
-    maxMines: MAX_MINES,
-    mineCount: 0,             // active mines placed by this player
-    protection: 0,             // shield ticks remaining
-    lethal: 0,                 // lethal ticks remaining
-    invisible: 0,              // invisible ticks remaining
-    portalCooldown: 0,
-    entrancePortal: -1,
-    exitPortal: -1,
-    isNpc: false,
-    slow: 0,
-    arrowAmmo: 0,
-    arrowRechargeProgress: 0
+    ammo: MAX_AMMO, maxAmmo: MAX_AMMO,
+    mines: MAX_MINES, maxMines: MAX_MINES, mineCount: 0,
+    protection: 0, lethal: 0, invisible: 0,
+    portalCooldown: 0, entrancePortal: -1, exitPortal: -1,
+    isNpc: false, slow: 0, arrowAmmo: 0, arrowRechargeProgress: 0
   };
 }
 
 function spawnNpc() {
   players[BOSS_ID] = createPlayer(BOSS_ID, 'El Devorador', '#8b0000', 'spiky');
-  const npc = players[BOSS_ID];
-  npc.isNpc = true;
-  npc.length = 10;
-  npc.score = 0;
+  players[BOSS_ID].isNpc = true;
+  players[BOSS_ID].length = 10;
+  players[BOSS_ID].score = 0;
 }
 
 function spawnDestructor() {
   players[BOSS_DESTRUCTOR_ID] = createPlayer(BOSS_DESTRUCTOR_ID, 'El Destructor', '#3b0066', 'stripe');
   const npc = players[BOSS_DESTRUCTOR_ID];
-  npc.isNpc = true;
-  npc.isDestructor = true;
-  npc.length = 15;
-  npc.score = 15;
-  npc.hp = 100;
-  npc.maxHp = 100;
-  npc.maxMines = 100;
-  npc._fireCooldown = 60;
-  npc._mineCooldown = 90;
+  npc.isNpc = true; npc.isDestructor = true;
+  npc.length = 15; npc.score = 15; npc.hp = 100; npc.maxHp = 100;
+  npc.maxMines = 100; npc._fireCooldown = 60; npc._mineCooldown = 90;
 }
-
 
 function placeMine(playerId) {
   const p = players[playerId];
   if (!p || !p.alive) return null;
   if (p.mineCount >= MAX_MINES && !(p.invisible > 0)) return null;
-
   const tail = p.segments[p.segments.length - 1];
   const mid = mineId++;
-  mines[mid] = {
-    id: mid,
-    ownerId: playerId,
-    x: tail.x,
-    y: tail.y,
-    color: p.color,
-    life: MINE_LIFETIME
-  };
+  mines[mid] = { id: mid, ownerId: playerId, x: tail.x, y: tail.y, color: p.color, life: MINE_LIFETIME };
   p.mineCount++;
   return mines[mid];
 }
 
 function circlesOverlap(ax, ay, ar, bx, by, br) {
   return (ax - bx) ** 2 + (ay - by) ** 2 < (ar + br) ** 2;
+}
+
+// FIX #7: Caché de colisiones NPC-jugador para evitar O(n²) cada tick
+// Cuadriculamos el mapa en celdas de 300px para búsqueda espacial rápida
+const GRID_CELL = 300;
+const GRID_COLS = Math.ceil(WORLD_WIDTH / GRID_CELL);
+const GRID_ROWS = Math.ceil(WORLD_HEIGHT / GRID_CELL);
+const spatialGrid = new Map();
+
+function gridKey(cx, cy) { return cx * 1000 + cy; }
+
+function buildSpatialGrid() {
+  spatialGrid.clear();
+  for (const pid in players) {
+    const p = players[pid];
+    if (!p.alive || !p.segments.length) continue;
+    const h = p.segments[0];
+    const cx = Math.floor(h.x / GRID_CELL);
+    const cy = Math.floor(h.y / GRID_CELL);
+    const key = gridKey(cx, cy);
+    if (!spatialGrid.has(key)) spatialGrid.set(key, []);
+    spatialGrid.get(key).push(pid);
+  }
+}
+
+// Devuelve jugadores en las 9 celdas vecinas de (wx, wy)
+function getNearbyPlayers(wx, wy) {
+  const cx = Math.floor(wx / GRID_CELL);
+  const cy = Math.floor(wy / GRID_CELL);
+  const result = [];
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      const key = gridKey(cx + dx, cy + dy);
+      const cell = spatialGrid.get(key);
+      if (cell) for (const pid of cell) result.push(pid);
+    }
+  }
+  return result;
 }
 
 // ── Game tick ────────────────────────────────────────────────────
@@ -393,72 +361,54 @@ function gameTick() {
   if (Object.keys(goldenApples).length === 0) {
     if (goldenAppleSpawnTimer > 0) {
       goldenAppleSpawnTimer--;
-      if (goldenAppleSpawnTimer <= 0) {
-        spawnGoldenApple();
-        staticChanged = true;
-      }
+      if (goldenAppleSpawnTimer <= 0) { spawnGoldenApple(); staticChanged = true; }
     }
   }
 
   const deltaPlayers = {};
   const deltaFood = [...pendingFood];
   pendingFood.length = 0;
-  
   const deaths = [];
-  const fbHits = [];     // { fbId, targetId }
-  const shieldHits = [];     // { x, y }
+  const fbHits = [];
+  const shieldHits = [];
 
   // ── Portal expiration ───────────────────────────────────────────
   let portalCountCurrent = 0;
   for (const pid in portals) {
     portalCountCurrent++;
     portals[pid].life--;
-    if (portals[pid].life <= 0) {
-      delete portals[pid];
-      portalCountCurrent--;
-      staticChanged = true;
-    }
+    if (portals[pid].life <= 0) { delete portals[pid]; portalCountCurrent--; staticChanged = true; }
   }
-  while (portalCountCurrent < PORTAL_COUNT) {
-    spawnPortal();
-    portalCountCurrent++;
-    staticChanged = true;
-  }
+  while (portalCountCurrent < PORTAL_COUNT) { spawnPortal(); portalCountCurrent++; staticChanged = true; }
 
   // ── Puddle expiration ───────────────────────────────────────────
   let puddleCountCurrent = 0;
   for (const pid in puddles) {
     puddleCountCurrent++;
     puddles[pid].life--;
-    if (puddles[pid].life <= 0) {
-      delete puddles[pid];
-      puddleCountCurrent--;
-      staticChanged = true;
-    }
+    if (puddles[pid].life <= 0) { delete puddles[pid]; puddleCountCurrent--; staticChanged = true; }
   }
-  while (puddleCountCurrent < PUDDLE_COUNT) {
-    spawnPuddle();
-    puddleCountCurrent++;
-    staticChanged = true;
-  }
+  while (puddleCountCurrent < PUDDLE_COUNT) { spawnPuddle(); puddleCountCurrent++; staticChanged = true; }
 
   // ── NPC Spawning & AI ──────────────────────────────────────────
   let activeNpcs = 0;
-  for (const pid in players) {
-    if (players[pid].isNpc && players[pid].alive) activeNpcs++;
-  }
+  for (const pid in players) { if (players[pid].isNpc && players[pid].alive) activeNpcs++; }
   if (activeNpcs < 1) spawnNpc();
+
+  // FIX #7: Construir grid espacial antes del loop de NPC-aggro
+  buildSpatialGrid();
 
   for (const pid in players) {
     const p = players[pid];
     if (!p.alive || !p.isNpc) continue;
-    
-    if (p.length > 40) p.length = 40; // Max length limit 40
-    
-    let closestObj = null, closestDist = 250 * 250; // Aggro range: 250
-    for (const tId in players) {
+    if (p.length > 40) p.length = 40;
+
+    // FIX #7: Usar grid espacial en lugar de iterar todos los jugadores
+    const nearby = getNearbyPlayers(p.segments[0].x, p.segments[0].y);
+    let closestObj = null, closestDist = 250 * 250;
+    for (const tId of nearby) {
       const target = players[tId];
-      if (target.id === p.id || target.isNpc || !target.alive) continue;
+      if (!target || target.id === p.id || target.isNpc || !target.alive) continue;
       const dx = target.segments[0].x - p.segments[0].x;
       const dy = target.segments[0].y - p.segments[0].y;
       const distSq = dx * dx + dy * dy;
@@ -469,7 +419,7 @@ function gameTick() {
       p.boosting = true;
     } else {
       p.boosting = false;
-      if (Math.random() < 0.05) p.targetAngle += rand(-Math.PI/2, Math.PI/2);
+      if (Math.random() < 0.05) p.targetAngle += rand(-Math.PI / 2, Math.PI / 2);
     }
   }
 
@@ -478,34 +428,18 @@ function gameTick() {
   for (const aid in greenApples) {
     greenAppleCountCurrent++;
     greenApples[aid].life--;
-    if (greenApples[aid].life <= 0) {
-      delete greenApples[aid];
-      greenAppleCountCurrent--;
-      staticChanged = true;
-    }
+    if (greenApples[aid].life <= 0) { delete greenApples[aid]; greenAppleCountCurrent--; staticChanged = true; }
   }
-  while (greenAppleCountCurrent < GREEN_APPLE_COUNT) {
-    spawnGreenApple();
-    greenAppleCountCurrent++;
-    staticChanged = true;
-  }
+  while (greenAppleCountCurrent < GREEN_APPLE_COUNT) { spawnGreenApple(); greenAppleCountCurrent++; staticChanged = true; }
 
   // ── Apple expiration ──────────────────────────────────────────
   let appleCountCurrent = 0;
   for (const aid in apples) {
     appleCountCurrent++;
     apples[aid].life--;
-    if (apples[aid].life <= 0) {
-      delete apples[aid];
-      appleCountCurrent--;
-      staticChanged = true;
-    }
+    if (apples[aid].life <= 0) { delete apples[aid]; appleCountCurrent--; staticChanged = true; }
   }
-  while (appleCountCurrent < APPLE_COUNT) {
-    spawnApple();
-    appleCountCurrent++;
-    staticChanged = true;
-  }
+  while (appleCountCurrent < APPLE_COUNT) { spawnApple(); appleCountCurrent++; staticChanged = true; }
 
   // ── Food expiration ───────────────────────────────────────────
   let foodCountCurrent = 0;
@@ -514,15 +448,9 @@ function gameTick() {
     const f = foods[fid];
     if (f.life !== undefined) {
       f.life -= 1;
-      if (f.life <= 0) {
-        delete foods[fid];
-        deltaFood.push({ type: 'remove', id: fid });
-        foodCountCurrent--;
-      }
+      if (f.life <= 0) { delete foods[fid]; deltaFood.push({ type: 'remove', id: fid }); foodCountCurrent--; }
     }
   }
-
-  // Spawn new ambient food if below threshold
   while (foodCountCurrent < FOOD_COUNT) {
     const nid = foodId++;
     spawnFood(nid);
@@ -530,7 +458,7 @@ function gameTick() {
     foodCountCurrent++;
   }
 
-  // ── Larva Movement & Spawning ─────────────────────────────────
+  // ── Larva Movement ─────────────────────────────────────────────
   let larvaCountCurrent = 0;
   for (const lid in larvas) {
     larvaCountCurrent++;
@@ -538,17 +466,12 @@ function gameTick() {
     if (Math.random() < 0.05) L.angle += rand(-0.4, 0.4);
     L.x += Math.cos(L.angle) * LARVA_SPEED;
     L.y += Math.sin(L.angle) * LARVA_SPEED;
-    
-    // Bounce walls
     if (L.x < LARVA_RADIUS) { L.x = LARVA_RADIUS; L.angle = Math.PI - L.angle; }
     else if (L.x > WORLD_WIDTH - LARVA_RADIUS) { L.x = WORLD_WIDTH - LARVA_RADIUS; L.angle = Math.PI - L.angle; }
     if (L.y < LARVA_RADIUS) { L.y = LARVA_RADIUS; L.angle = -L.angle; }
     else if (L.y > WORLD_HEIGHT - LARVA_RADIUS) { L.y = WORLD_HEIGHT - LARVA_RADIUS; L.angle = -L.angle; }
   }
-  while (larvaCountCurrent < LARVA_COUNT) {
-    spawnLarva();
-    larvaCountCurrent++;
-  }
+  while (larvaCountCurrent < LARVA_COUNT) { spawnLarva(); larvaCountCurrent++; }
 
   // ── Slug Movement ──────────────────────────────────────────────
   let slugCountCurrent = 0;
@@ -563,10 +486,7 @@ function gameTick() {
     if (S.y < SLUG_RADIUS) { S.y = SLUG_RADIUS; S.angle = -S.angle; }
     else if (S.y > WORLD_HEIGHT - SLUG_RADIUS) { S.y = WORLD_HEIGHT - SLUG_RADIUS; S.angle = -S.angle; }
   }
-  while (slugCountCurrent < SLUG_COUNT) {
-    spawnSlug();
-    slugCountCurrent++;
-  }
+  while (slugCountCurrent < SLUG_COUNT) { spawnSlug(); slugCountCurrent++; }
 
   // ── Worm Movement ──────────────────────────────────────────────
   let wormCountCurrent = 0;
@@ -577,7 +497,6 @@ function gameTick() {
     const head = W.segs[0];
     const nx = head.x + Math.cos(W.angle) * WORM_SPEED;
     const ny = head.y + Math.sin(W.angle) * WORM_SPEED;
-    // wall bounce
     let na = W.angle;
     if (nx < WORM_RADIUS || nx > WORLD_WIDTH - WORM_RADIUS) na = Math.PI - na;
     if (ny < WORM_RADIUS || ny > WORLD_HEIGHT - WORM_RADIUS) na = -na;
@@ -587,20 +506,13 @@ function gameTick() {
     W.segs.unshift({ x: fnx, y: fny });
     W.segs.pop();
   }
-  while (wormCountCurrent < WORM_COUNT) {
-    spawnWorm();
-    wormCountCurrent++;
-  }
+  while (wormCountCurrent < WORM_COUNT) { spawnWorm(); wormCountCurrent++; }
 
   // ── Ant Movement ──────────────────────────────────────────────
   for (const aid in ants) {
     const A = ants[aid];
-    if (A.pauseTicks > 0) {
-      A.pauseTicks--;
-      continue;
-    }
-    // Random direction change
-    if (Math.random() < 0.15) A.angle += rand(-Math.PI/2, Math.PI/2);
+    if (A.pauseTicks > 0) { A.pauseTicks--; continue; }
+    if (Math.random() < 0.15) A.angle += rand(-Math.PI / 2, Math.PI / 2);
     A.x += Math.cos(A.angle) * ANT_SPEED;
     A.y += Math.sin(A.angle) * ANT_SPEED;
     if (A.x < ANT_RADIUS) { A.x = ANT_RADIUS; A.angle = Math.PI - A.angle; }
@@ -608,11 +520,7 @@ function gameTick() {
     if (A.y < ANT_RADIUS) { A.y = ANT_RADIUS; A.angle = -A.angle; }
     else if (A.y > WORLD_HEIGHT - ANT_RADIUS) { A.y = WORLD_HEIGHT - ANT_RADIUS; A.angle = -A.angle; }
     A.moveTicks--;
-    if (A.moveTicks <= 0) {
-      A.moveTicks = ANT_MOVE_TICKS;
-      A.pauseTicks = ANT_PAUSE_TICKS;
-      A.angle += rand(-Math.PI * 0.75, Math.PI * 0.75); // new direction after pause
-    }
+    if (A.moveTicks <= 0) { A.moveTicks = ANT_MOVE_TICKS; A.pauseTicks = ANT_PAUSE_TICKS; A.angle += rand(-Math.PI * 0.75, Math.PI * 0.75); }
   }
 
   // ── Move players ──────────────────────────────────────────────
@@ -620,17 +528,8 @@ function gameTick() {
     const p = players[pid];
     if (!p.alive) continue;
 
-    // Ant drag check, applied to head
     if (!p.isNpc && p.dragTicks === undefined) p.dragTicks = 0;
-    if (!p.isNpc) {
-      if (p.dragTicks > 0) {
-        p.dragTicks--;
-        // Force snake heading toward ant's last angle
-        const diff2 = p.dragAngle - p.angle;
-        const d2 = ((diff2 + Math.PI) % (2 * Math.PI)) - Math.PI;
-        p.targetAngle = p.dragAngle;
-      }
-    }
+    if (!p.isNpc && p.dragTicks > 0) { p.dragTicks--; p.targetAngle = p.dragAngle; }
 
     let diff = p.targetAngle - p.angle;
     while (diff > Math.PI) diff -= 2 * Math.PI;
@@ -640,35 +539,27 @@ function gameTick() {
     const head = p.segments[0];
 
     if (p.slow > 0) p.slow--;
-    for (const pid in puddles) {
-      if (circlesOverlap(head.x, head.y, HEAD_RADIUS, puddles[pid].x, puddles[pid].y, PUDDLE_RADIUS)) {
-        p.slow = PUDDLE_SLOW_TIME;
-        break;
+    for (const pid2 in puddles) {
+      if (circlesOverlap(head.x, head.y, HEAD_RADIUS, puddles[pid2].x, puddles[pid2].y, PUDDLE_RADIUS)) {
+        p.slow = PUDDLE_SLOW_TIME; break;
       }
     }
 
     let speed = (p.boosting && p.length > 10) ? BOOST_SPEED : SNAKE_SPEED;
-    if (p.invisible > 0) {
-      p.invisible--;
-      speed *= 1.3;
-    }
+    if (p.invisible > 0) { p.invisible--; speed *= 1.3; }
     if (p.slow > 0) speed *= 0.5;
 
     let nx = head.x + Math.cos(p.angle) * speed;
     let ny = head.y + Math.sin(p.angle) * speed;
 
-    // Check if snake touches the borders - if so, it dies
-    if (nx < HEAD_RADIUS || nx > WORLD_WIDTH - HEAD_RADIUS ||
-      ny < HEAD_RADIUS || ny > WORLD_HEIGHT - HEAD_RADIUS) {
+    if (nx < HEAD_RADIUS || nx > WORLD_WIDTH - HEAD_RADIUS || ny < HEAD_RADIUS || ny > WORLD_HEIGHT - HEAD_RADIUS) {
       if (p.isNpc) {
-        p.targetAngle += Math.PI;
-        p.angle += Math.PI;
+        p.targetAngle += Math.PI; p.angle += Math.PI;
         nx = head.x + Math.cos(p.angle) * speed * 2;
         ny = head.y + Math.sin(p.angle) * speed * 2;
       } else {
         p.alive = false;
         deaths.push({ id: p.id, killedBy: null });
-        // Drop food from dead snake
         for (let k = 0; k < p.segments.length; k += 3) {
           const fid = foodId++;
           foods[fid] = { id: fid, x: p.segments[k].x, y: p.segments[k].y, color: p.color, value: 1, life: rand(300, 900) };
@@ -679,14 +570,10 @@ function gameTick() {
     }
 
     if (p.isDestructor) {
-      // Random wandering
-      if (Math.random() < 0.02) p.targetAngle = p.angle + rand(-Math.PI/2, Math.PI/2);
-      
-      // Fireball attack
+      if (Math.random() < 0.02) p.targetAngle = p.angle + rand(-Math.PI / 2, Math.PI / 2);
       p._fireCooldown--;
       if (p._fireCooldown <= 0) {
-        p._fireCooldown = rand(90, 150); // 3-5 seconds
-        const head = p.segments[0];
+        p._fireCooldown = rand(90, 150);
         const fbid = fireballId++;
         fireballs[fbid] = {
           id: fbid, ownerId: p.id, color: p.color,
@@ -694,16 +581,14 @@ function gameTick() {
           y: head.y + Math.sin(p.angle) * (HEAD_RADIUS + FIREBALL_RADIUS + 2),
           angle: p.angle, life: FIREBALL_LIFETIME
         };
-        // Use pendingFood or emit directly? No, fireballs have no deltaFood array. They emit directly!
-        io.emit('fireballSpawned', JSON.stringify(fireballs[fbid]));
+        // FIX #1: Sin JSON.stringify — Socket.IO serializa automáticamente
+        io.emit('fireballSpawned', fireballs[fbid]);
       }
-
-      // Mine drop attack
       p._mineCooldown--;
       if (p._mineCooldown <= 0) {
-        p._mineCooldown = rand(150, 240); // 5-8 seconds
+        p._mineCooldown = rand(150, 240);
         const mine = placeMine(p.id);
-        if (mine) io.emit('mineSpawned', JSON.stringify(mine));
+        if (mine) io.emit('mineSpawned', mine);
       }
     }
 
@@ -714,7 +599,6 @@ function gameTick() {
     if (p.lethal > 0) p.lethal--;
     if (p.portalCooldown > 0) p.portalCooldown--;
 
-    // Portal enter logic
     if (p.portalCooldown <= 0) {
       const h = p.segments[0];
       for (const pid2 in portals) {
@@ -723,44 +607,34 @@ function gameTick() {
           const others = Object.values(portals).filter(op => op.id !== port.id);
           if (others.length > 0) {
             const dest = others[Math.floor(Math.random() * others.length)];
-            h.x = dest.x;
-            h.y = dest.y;
+            h.x = dest.x; h.y = dest.y;
             p.portalCooldown = 45;
-            p.entrancePortal = port.id;
-            p.exitPortal = dest.id;
+            p.entrancePortal = port.id; p.exitPortal = dest.id;
             break;
           }
         }
       }
     }
 
-    // Traverse check
     let isTraversing = false;
     for (let i = 0; i < p.segments.length - 1; i++) {
       const dx = p.segments[i].x - p.segments[i + 1].x;
       const dy = p.segments[i].y - p.segments[i + 1].y;
-      if (dx * dx + dy * dy > 40000) {
-        isTraversing = true;
-        break;
-      }
+      if (dx * dx + dy * dy > 40000) { isTraversing = true; break; }
     }
-
-    if (isTraversing) {
-      if (!portals[p.entrancePortal] || !portals[p.exitPortal]) {
-        p.alive = false;
-        deaths.push({ id: p.id, killedBy: null });
-        for (let k = 0; k < p.segments.length; k += 3) {
-          const fid = foodId++;
-          foods[fid] = { id: fid, x: p.segments[k].x, y: p.segments[k].y, color: p.color, value: 1, life: rand(300, 900) };
-          deltaFood.push({ type: 'add', food: foods[fid] });
-        }
-        continue;
+    if (isTraversing && (!portals[p.entrancePortal] || !portals[p.exitPortal])) {
+      p.alive = false;
+      deaths.push({ id: p.id, killedBy: null });
+      for (let k = 0; k < p.segments.length; k += 3) {
+        const fid = foodId++;
+        foods[fid] = { id: fid, x: p.segments[k].x, y: p.segments[k].y, color: p.color, value: 1, life: rand(300, 900) };
+        deltaFood.push({ type: 'add', food: foods[fid] });
       }
+      continue;
     }
 
     if (p.boosting && p.length > 10) {
-      p.length -= 0.3;
-      p.score = Math.max(0, p.score - 0.3);
+      p.length -= 0.3; p.score = Math.max(0, p.score - 0.3);
       if (Math.random() < 0.3) {
         const fid = foodId++;
         foods[fid] = { id: fid, x: p.segments[p.segments.length - 1].x, y: p.segments[p.segments.length - 1].y, color: p.color, value: 1, life: rand(300, 900) };
@@ -768,28 +642,26 @@ function gameTick() {
       }
     }
 
+    // FIX #6: Enviar solo cabeza en ticks normales, segmentos completos solo cada 2s.
+    // Para el jugador propio se envía siempre la posición de la cabeza y len.
+    // Los segmentos completos se mandan periódicamente como respaldo.
     const playerUpdate = {
       id: p.id, name: p.name, color: p.color, pattern: p.pattern,
       score: Math.floor(p.score), alive: p.alive, boosting: (p.boosting && p.length > 10),
       ammo: p.ammo, maxAmmo: p.maxAmmo,
       mines: MAX_MINES - p.mineCount, maxMines: MAX_MINES,
-      protected: (p.protection > 0),
-      lethal: (p.lethal > 0),
-      invisible: (p.invisible > 0),
-      isNpc: p.isNpc,
-      isDestructor: p.isDestructor,
-      hp: p.hp,
-      maxHp: p.maxHp,
-      slow: (p.slow > 0),
-      len: p.segments.length,
-      arrowAmmo: p.arrowAmmo
+      protected: (p.protection > 0), lethal: (p.lethal > 0), invisible: (p.invisible > 0),
+      isNpc: p.isNpc, isDestructor: p.isDestructor,
+      hp: p.hp, maxHp: p.maxHp, slow: (p.slow > 0),
+      len: p.segments.length, arrowAmmo: p.arrowAmmo
     };
 
-    // Only send full segments if it's the first time or every ~2 seconds (60 ticks) as safety
-    if (!p._lastSegmentsSent || (Date.now() - p._lastSegmentsSent > 2000)) {
+    const now = Date.now();
+    if (!p._lastSegmentsSent || (now - p._lastSegmentsSent > 2000)) {
       playerUpdate.segments = p.segments;
-      p._lastSegmentsSent = Date.now();
+      p._lastSegmentsSent = now;
     } else {
+      // FIX #6: Solo mandamos la cabeza; el cliente interpola el resto
       playerUpdate.head = p.segments[0];
     }
 
@@ -804,40 +676,31 @@ function gameTick() {
     for (const fid in foods) {
       const f = foods[fid];
       if (circlesOverlap(head.x, head.y, HEAD_RADIUS, f.x, f.y, FOOD_RADIUS)) {
-        p.score += f.value;
-        p.length += f.value * 2;
-        // Recharge arrows: 1 per 5 points
+        p.score += f.value; p.length += f.value * 2;
         p.arrowRechargeProgress += f.value;
         if (p.arrowRechargeProgress >= ARROW_RECHARGE_SCORE) {
-          const arrowsToAdd = Math.floor(p.arrowRechargeProgress / ARROW_RECHARGE_SCORE);
-          p.arrowAmmo = Math.min(ARROW_MAX_AMMO, p.arrowAmmo + arrowsToAdd);
+          const n = Math.floor(p.arrowRechargeProgress / ARROW_RECHARGE_SCORE);
+          p.arrowAmmo = Math.min(ARROW_MAX_AMMO, p.arrowAmmo + n);
           p.arrowRechargeProgress %= ARROW_RECHARGE_SCORE;
         }
-        // Recharge ammo on eat
         if (p.ammo < p.maxAmmo) p.ammo = Math.min(p.maxAmmo, p.ammo + AMMO_PER_FOOD);
         delete foods[fid];
         deltaFood.push({ type: 'remove', id: fid });
       }
     }
-    
-    // Eat larvae
     for (const lid in larvas) {
       const L = larvas[lid];
       if (circlesOverlap(head.x, head.y, HEAD_RADIUS, L.x, L.y, LARVA_RADIUS)) {
-        p.score += LARVA_VALUE;
-        p.length += LARVA_VALUE * 2;
-        // Recharge arrows: 1 per 5 points
+        p.score += LARVA_VALUE; p.length += LARVA_VALUE * 2;
         p.arrowRechargeProgress += LARVA_VALUE;
         if (p.arrowRechargeProgress >= ARROW_RECHARGE_SCORE) {
-          const arrowsToAdd = Math.floor(p.arrowRechargeProgress / ARROW_RECHARGE_SCORE);
-          p.arrowAmmo = Math.min(ARROW_MAX_AMMO, p.arrowAmmo + arrowsToAdd);
+          const n = Math.floor(p.arrowRechargeProgress / ARROW_RECHARGE_SCORE);
+          p.arrowAmmo = Math.min(ARROW_MAX_AMMO, p.arrowAmmo + n);
           p.arrowRechargeProgress %= ARROW_RECHARGE_SCORE;
         }
         delete larvas[lid];
       }
     }
-    
-    // Slug damage (any body segment touching slug)
     if (!p.isNpc) {
       for (const sid in slugs) {
         const S = slugs[sid];
@@ -848,8 +711,7 @@ function gameTick() {
           if (circlesOverlap(p.segments[s].x, p.segments[s].y, SNAKE_RADIUS + 2, S.x, S.y, SLUG_RADIUS)) {
             const dmg = Math.min(SLUG_DAMAGE, p.length - 4);
             if (dmg > 0) {
-              p.length = Math.max(4, p.length - dmg);
-              p.score = Math.max(0, p.score - dmg * 0.5);
+              p.length = Math.max(4, p.length - dmg); p.score = Math.max(0, p.score - dmg * 0.5);
               for (let k = 0; k < dmg * 2; k++) {
                 const idx = p.segments.length - 1 - k;
                 if (idx < 0) break;
@@ -858,48 +720,37 @@ function gameTick() {
                 deltaFood.push({ type: 'add', food: foods[fid] });
               }
             }
-            S._hitCooldown[p.id] = SLUG_HIT_COOLDOWN;
-            break;
+            S._hitCooldown[p.id] = SLUG_HIT_COOLDOWN; break;
           }
         }
       }
     }
-
-    // Eat earthworms (head touches any worm segment)
     for (const wid in worms) {
       const W = worms[wid];
       for (let s = 0; s < W.segs.length; s++) {
         if (circlesOverlap(head.x, head.y, HEAD_RADIUS, W.segs[s].x, W.segs[s].y, WORM_RADIUS)) {
-          p.score += WORM_VALUE;
-          p.length += WORM_VALUE * 2;
-          // Recharge arrows: 1 per 5 points
+          p.score += WORM_VALUE; p.length += WORM_VALUE * 2;
           p.arrowRechargeProgress += WORM_VALUE;
           if (p.arrowRechargeProgress >= ARROW_RECHARGE_SCORE) {
-            const arrowsToAdd = Math.floor(p.arrowRechargeProgress / ARROW_RECHARGE_SCORE);
-            p.arrowAmmo = Math.min(ARROW_MAX_AMMO, p.arrowAmmo + arrowsToAdd);
+            const n = Math.floor(p.arrowRechargeProgress / ARROW_RECHARGE_SCORE);
+            p.arrowAmmo = Math.min(ARROW_MAX_AMMO, p.arrowAmmo + n);
             p.arrowRechargeProgress %= ARROW_RECHARGE_SCORE;
           }
-          delete worms[wid];
-          break;
+          delete worms[wid]; break;
         }
       }
     }
-
-    // Ant collision: drag + damage
     if (!p.isNpc) {
       for (const aid in ants) {
         const A = ants[aid];
         A._hitCooldown = A._hitCooldown || {};
         const cooldown = A._hitCooldown[p.id] || 0;
         if (cooldown > 0) { A._hitCooldown[p.id]--; continue; }
-        if (p.invisible > 0) continue; // Immune to ants
-
+        if (p.invisible > 0) continue;
         if (circlesOverlap(head.x, head.y, HEAD_RADIUS, A.x, A.y, ANT_RADIUS)) {
-          // Damage
           const dmg = Math.min(ANT_DAMAGE, p.length - 4);
           if (dmg > 0) {
-            p.length = Math.max(4, p.length - dmg);
-            p.score = Math.max(0, p.score - dmg * 0.5);
+            p.length = Math.max(4, p.length - dmg); p.score = Math.max(0, p.score - dmg * 0.5);
             for (let k = 0; k < dmg * 2; k++) {
               const idx = p.segments.length - 1 - k;
               if (idx < 0) break;
@@ -908,9 +759,7 @@ function gameTick() {
               deltaFood.push({ type: 'add', food: foods[fid] });
             }
           }
-          // Drag
-          p.dragAngle = A.angle;
-          p.dragTicks = ANT_DRAG_TICKS;
+          p.dragAngle = A.angle; p.dragTicks = ANT_DRAG_TICKS;
           A._hitCooldown[p.id] = ANT_HIT_COOLDOWN;
         }
       }
@@ -923,75 +772,48 @@ function gameTick() {
     if (!p.alive) continue;
     const head = p.segments[0];
     for (const aid in apples) {
-      const a = apples[aid];
-      if (circlesOverlap(head.x, head.y, HEAD_RADIUS, a.x, a.y, APPLE_RADIUS)) {
-        p.protection = PROTECTION_TIME;
-        delete apples[aid];
-        spawnApple();
-        staticChanged = true;
+      if (circlesOverlap(head.x, head.y, HEAD_RADIUS, apples[aid].x, apples[aid].y, APPLE_RADIUS)) {
+        p.protection = PROTECTION_TIME; delete apples[aid]; spawnApple(); staticChanged = true;
       }
     }
     for (const gid in greenApples) {
-      const g = greenApples[gid];
-      if (circlesOverlap(head.x, head.y, HEAD_RADIUS, g.x, g.y, APPLE_RADIUS)) {
-        p.lethal = LETHAL_TIME;
-        delete greenApples[gid];
-        spawnGreenApple();
-        staticChanged = true;
+      if (circlesOverlap(head.x, head.y, HEAD_RADIUS, greenApples[gid].x, greenApples[gid].y, APPLE_RADIUS)) {
+        p.lethal = LETHAL_TIME; delete greenApples[gid]; spawnGreenApple(); staticChanged = true;
       }
     }
     for (const gaid in goldenApples) {
-      const ga = goldenApples[gaid];
-      if (circlesOverlap(head.x, head.y, HEAD_RADIUS, ga.x, ga.y, APPLE_RADIUS * 2)) {
-        p.invisible = 25 * 30; // 25 seconds
-        delete goldenApples[gaid];
-        goldenAppleSpawnTimer = 15 * 30; // 15 seconds cooldown
-        staticChanged = true;
+      if (circlesOverlap(head.x, head.y, HEAD_RADIUS, goldenApples[gaid].x, goldenApples[gaid].y, APPLE_RADIUS * 2)) {
+        p.invisible = 25 * 30; delete goldenApples[gaid]; goldenAppleSpawnTimer = 15 * 30; staticChanged = true;
       }
     }
   }
 
   // ── Move & age fireballs ──────────────────────────────────────
-  const fbDelta = [];   // changes to broadcast
-
+  const fbDelta = [];
   for (const fbid in fireballs) {
     const fb = fireballs[fbid];
     fb.x += Math.cos(fb.angle) * FIREBALL_SPEED;
     fb.y += Math.sin(fb.angle) * FIREBALL_SPEED;
     fb.life -= 1;
-
-    // Out of bounds or expired
     if (fb.life <= 0 || fb.x < 0 || fb.x > WORLD_WIDTH || fb.y < 0 || fb.y > WORLD_HEIGHT) {
-      delete fireballs[fbid];
-      fbDelta.push({ type: 'remove', id: fbid });
-      continue;
+      delete fireballs[fbid]; fbDelta.push({ type: 'remove', id: fbid }); continue;
     }
-
-    // Check hit vs all other players
     let hit = false;
     for (const pid in players) {
       if (pid === fb.ownerId) continue;
       const target = players[pid];
       if (!target.alive || !target.segments?.length) continue;
-      
-      // Destructor/NPCs fireballs dont hurt golden apple players
       if (target.invisible > 0 && players[fb.ownerId]?.isNpc) continue;
-
-      // Check vs every segment
       for (let s = 0; s < target.segments.length; s++) {
         const seg = target.segments[s];
         if (circlesOverlap(fb.x, fb.y, FIREBALL_RADIUS, seg.x, seg.y, SNAKE_RADIUS + 2)) {
           if (target.isDestructor) {
             target.hp -= 5;
             if (target.hp <= 0 && target.alive) {
-              target.alive = false;
-              deaths.push({ id: target.id, killedBy: fb.ownerId });
+              target.alive = false; deaths.push({ id: target.id, killedBy: fb.ownerId });
               const shooter = players[fb.ownerId];
-              if (shooter) {
-                shooter.score += 100;
-                shooter.length += 200;
-              }
-              destructorRespawnTimer = 30 * 30; // 30s at 30fps
+              if (shooter) { shooter.score += 100; shooter.length += 200; }
+              destructorRespawnTimer = 30 * 30;
               for (let k = 0; k < target.segments.length; k += 2) {
                 const fid = foodId++;
                 foods[fid] = { id: fid, x: target.segments[k].x, y: target.segments[k].y, color: target.color, value: 5, life: rand(300, 900) };
@@ -999,19 +821,12 @@ function gameTick() {
               }
             }
             fbHits.push({ fbId: fbid, targetId: pid, x: fb.x, y: fb.y });
-            delete fireballs[fbid];
-            fbDelta.push({ type: 'remove', id: fbid });
-            hit = true;
-            break;
           } else if (target.protection > 0) {
             shieldHits.push({ x: fb.x, y: fb.y });
           } else {
-            // Hit! shrink target
             const dmg = Math.min(FIREBALL_DAMAGE, target.length - 4);
             if (dmg > 0) {
-              target.length = Math.max(4, target.length - dmg);
-              target.score = Math.max(0, target.score - dmg * 0.5);
-              // Drop food from removed tail
+              target.length = Math.max(4, target.length - dmg); target.score = Math.max(0, target.score - dmg * 0.5);
               for (let k = 0; k < dmg * 2; k++) {
                 const idx = target.segments.length - 1 - k;
                 if (idx < 0) break;
@@ -1019,37 +834,31 @@ function gameTick() {
                 foods[fid] = { id: fid, x: target.segments[idx].x, y: target.segments[idx].y, color: target.color, value: 1, life: rand(300, 900) };
                 deltaFood.push({ type: 'add', food: foods[fid] });
               }
-              // Give shooter some score
               const shooter = players[fb.ownerId];
-              if (shooter) { 
+              if (shooter) {
                 const gain = dmg * 0.5;
-                shooter.score += gain; 
-                // Recharge arrows: 1 per 5 points
+                shooter.score += gain;
                 shooter.arrowRechargeProgress += gain;
                 if (shooter.arrowRechargeProgress >= ARROW_RECHARGE_SCORE) {
-                  const arrowsToAdd = Math.floor(shooter.arrowRechargeProgress / ARROW_RECHARGE_SCORE);
-                  shooter.arrowAmmo = Math.min(ARROW_MAX_AMMO, shooter.arrowAmmo + arrowsToAdd);
+                  const n = Math.floor(shooter.arrowRechargeProgress / ARROW_RECHARGE_SCORE);
+                  shooter.arrowAmmo = Math.min(ARROW_MAX_AMMO, shooter.arrowAmmo + n);
                   shooter.arrowRechargeProgress %= ARROW_RECHARGE_SCORE;
                 }
               }
             }
             fbHits.push({ fbId: fbid, targetId: pid, x: fb.x, y: fb.y });
           }
-          delete fireballs[fbid];
-          fbDelta.push({ type: 'remove', id: fbid });
-          hit = true;
-          break;
+          delete fireballs[fbid]; fbDelta.push({ type: 'remove', id: fbid }); hit = true; break;
         }
       }
       if (hit) break;
     }
-
     if (!hit && fireballs[fbid]) {
       fbDelta.push({ type: 'update', fb: { id: fb.id, x: fb.x, y: fb.y, life: fb.life, angle: fb.angle, ownerId: fb.ownerId, color: fb.color } });
     }
   }
 
-  // ── Snake-snake head collisions ───────────────────────────────
+  // ── Snake-snake collisions ───────────────────────────────────
   const pids = Object.keys(players).filter(pid => players[pid].alive);
   for (let i = 0; i < pids.length; i++) {
     for (let j = 0; j < pids.length; j++) {
@@ -1057,95 +866,54 @@ function gameTick() {
       const pa = players[pids[i]], pb = players[pids[j]];
       if (!pa.alive || !pb.alive) continue;
       if (pa.isNpc && pb.isNpc) continue;
-      if ((pa.isNpc && pb.invisible > 0) || (pb.isNpc && pa.invisible > 0)) continue; // Ignore NPCs if invisible
+      if ((pa.isNpc && pb.invisible > 0) || (pb.isNpc && pa.invisible > 0)) continue;
       const headA = pa.segments[0];
       const startSeg = pb.isNpc ? 0 : 2;
       for (let s = startSeg; s < pb.segments.length; s++) {
         const seg = pb.segments[s];
         const hitRad = SNAKE_RADIUS + (pb.isNpc ? 4 : 0);
         if (circlesOverlap(headA.x, headA.y, HEAD_RADIUS - 2, seg.x, seg.y, hitRad)) {
-          if (pa.isNpc) {
-            pb.alive = false;
-            deaths.push({ id: pb.id, killedBy: pa.id });
-            for (let k = 0; k < pb.segments.length; k += 3) {
-              const fid = foodId++;
-              foods[fid] = { id: fid, x: pb.segments[k].x, y: pb.segments[k].y, color: pb.color, value: 1, life: rand(300, 900) };
-              deltaFood.push({ type: 'add', food: foods[fid] });
-            }
-            break;
-          } else if (pb.isNpc) {
-            pa.alive = false;
-            deaths.push({ id: pa.id, killedBy: pb.id });
-            for (let k = 0; k < pa.segments.length; k += 3) {
-              const fid = foodId++;
-              foods[fid] = { id: fid, x: pa.segments[k].x, y: pa.segments[k].y, color: pa.color, value: 1, life: rand(300, 900) };
-              deltaFood.push({ type: 'add', food: foods[fid] });
-            }
-            break;
-          } else if (pa.lethal > 0) {
-            pb.alive = false;
-            deaths.push({ id: pb.id, killedBy: pa.id });
-            for (let k = 0; k < pb.segments.length; k += 3) {
-              const fid = foodId++;
-              foods[fid] = { id: fid, x: pb.segments[k].x, y: pb.segments[k].y, color: pb.color, value: 1, life: rand(300, 900) };
-              deltaFood.push({ type: 'add', food: foods[fid] });
-            }
-            break;
-          } else {
-            pa.alive = false;
-            deaths.push({ id: pa.id, killedBy: pb.id });
-            for (let k = 0; k < pa.segments.length; k += 3) {
-              const fid = foodId++;
-              foods[fid] = { id: fid, x: pa.segments[k].x, y: pa.segments[k].y, color: pa.color, value: 1, life: rand(300, 900) };
-              deltaFood.push({ type: 'add', food: foods[fid] });
-            }
-            break;
+          const killer = pa.isNpc ? pb : (pb.isNpc ? pa : null);
+          const victim = pa.isNpc ? pb : (pb.isNpc ? pa : (pa.lethal > 0 ? pb : pa));
+          const victimId = victim.id;
+          victim.alive = false;
+          deaths.push({ id: victimId, killedBy: pa.isNpc ? pa.id : pb.id });
+          for (let k = 0; k < victim.segments.length; k += 3) {
+            const fid = foodId++;
+            foods[fid] = { id: fid, x: victim.segments[k].x, y: victim.segments[k].y, color: victim.color, value: 1, life: rand(300, 900) };
+            deltaFood.push({ type: 'add', food: foods[fid] });
           }
+          break;
         }
       }
     }
   }
 
   // ── Mine collisions ───────────────────────────────────────────
-  const mineDelta = [];   // changes to broadcast
-  const mineHits = [];   // { mineId, targetId }
-
+  const mineDelta = [];
+  const mineHits = [];
   for (const mid in mines) {
     const m = mines[mid];
     m.life -= 1;
-
-    // Expired
     if (m.life <= 0) {
       delete mines[mid];
-      const owner = players[m.ownerId];
-      if (owner) owner.mineCount--;
-      mineDelta.push({ type: 'remove', id: mid });
-      continue;
+      const owner = players[m.ownerId]; if (owner) owner.mineCount--;
+      mineDelta.push({ type: 'remove', id: mid }); continue;
     }
-
-    // Check hit vs all players
     let hit = false;
     for (const pid in players) {
-      if (pid === m.ownerId) continue; // owner's mines don't hurt owner
+      if (pid === m.ownerId) continue;
       const target = players[pid];
       if (!target.alive || !target.segments?.length) continue;
-
-      // Destructor/NPCs mines dont hurt golden apple players
       if (target.invisible > 0 && players[m.ownerId]?.isNpc) continue;
-
-      // Check vs every segment
       for (let s = 0; s < target.segments.length; s++) {
-        const seg = target.segments[s];
-        if (circlesOverlap(m.x, m.y, MINE_RADIUS, seg.x, seg.y, SNAKE_RADIUS + 2)) {
+        if (circlesOverlap(m.x, m.y, MINE_RADIUS, target.segments[s].x, target.segments[s].y, SNAKE_RADIUS + 2)) {
           if (target.protection > 0) {
             shieldHits.push({ x: m.x, y: m.y });
           } else {
-            // Hit! shrink target
             const dmg = Math.min(MINE_DAMAGE, target.length - 4);
             if (dmg > 0) {
-              target.length = Math.max(4, target.length - dmg);
-              target.score = Math.max(0, target.score - dmg * 0.5);
-              // Drop food from removed tail
+              target.length = Math.max(4, target.length - dmg); target.score = Math.max(0, target.score - dmg * 0.5);
               for (let k = 0; k < dmg * 2; k++) {
                 const idx = target.segments.length - 1 - k;
                 if (idx < 0) break;
@@ -1157,16 +925,12 @@ function gameTick() {
             mineHits.push({ mineId: mid, targetId: pid, x: m.x, y: m.y });
           }
           delete mines[mid];
-          const owner = players[m.ownerId];
-          if (owner) owner.mineCount--;
-          mineDelta.push({ type: 'remove', id: mid });
-          hit = true;
-          break;
+          const owner = players[m.ownerId]; if (owner) owner.mineCount--;
+          mineDelta.push({ type: 'remove', id: mid }); hit = true; break;
         }
       }
       if (hit) break;
     }
-
     if (!hit && mines[mid]) {
       mineDelta.push({ type: 'update', mine: { id: m.id, x: m.x, y: m.y, life: m.life, color: m.color, ownerId: m.ownerId } });
     }
@@ -1177,38 +941,12 @@ function gameTick() {
     .sort((a, b) => b.score - a.score).slice(0, 10)
     .map(p => ({ id: p.id, name: p.name, score: Math.floor(p.score), color: p.color, alive: p.alive }));
 
-  const tickPacket = { 
-    players: deltaPlayers, 
-    foodChanges: deltaFood, 
-    leaderboard, 
-    fbDelta, 
-    fbHits, 
-    mineDelta, 
-    mineHits, 
-    shieldHits, 
-    larvas: Object.values(larvas), 
-    slugs: Object.values(slugs), 
-    worms: Object.values(worms).map(w => ({ id: w.id, head: w.segs[0], len: w.segs.length, angle: w.angle })), 
-    ants: Object.values(ants) 
-  };
-  
-  if (staticChanged) {
-    tickPacket.apples = Object.values(apples);
-    tickPacket.greenApples = Object.values(greenApples);
-    tickPacket.goldenApples = Object.values(goldenApples);
-    tickPacket.portals = Object.values(portals);
-    tickPacket.puddles = Object.values(puddles);
-    staticChanged = false;
-  }
-
   // ── Rock collisions & Timer ──────────────────────────────────
   rockRelocateTimer++;
+  let rocksChanged = false;
   if (rockRelocateTimer >= ROCK_RELOCATE_TICKS) {
-    rockRelocateTimer = 0;
-    relocateRocks();
-    tickPacket.rocks = Object.values(rocks);
+    rockRelocateTimer = 0; relocateRocks(); rocksChanged = true;
   }
-
   for (const pid in players) {
     const p = players[pid];
     if (!p.alive || p.isNpc) continue;
@@ -1216,9 +954,7 @@ function gameTick() {
     for (const rid in rocks) {
       const r = rocks[rid];
       if (circlesOverlap(h.x, h.y, HEAD_RADIUS - 2, r.x, r.y, r.radius - 5)) {
-        p.alive = false;
-        deaths.push({ id: p.id, killedBy: 'obstáculo_piedra' });
-        // Drop food
+        p.alive = false; deaths.push({ id: p.id, killedBy: 'obstáculo_piedra' });
         for (let k = 0; k < p.segments.length; k += 3) {
           const fid = foodId++;
           foods[fid] = { id: fid, x: p.segments[k].x, y: p.segments[k].y, color: p.color, value: 1, life: rand(300, 900) };
@@ -1236,65 +972,48 @@ function gameTick() {
     a.x += Math.cos(a.angle) * ARROW_SPEED;
     a.y += Math.sin(a.angle) * ARROW_SPEED;
     a.life--;
-
     if (a.life <= 0 || a.x < 0 || a.x > WORLD_WIDTH || a.y < 0 || a.y > WORLD_HEIGHT) {
-      delete arrows[aid];
-      arrowDelta.push({ type: 'remove', id: aid });
-      continue;
+      delete arrows[aid]; arrowDelta.push({ type: 'remove', id: aid }); continue;
     }
-
     let hit = false;
     for (const pid in players) {
       if (pid === a.ownerId) continue;
       const target = players[pid];
       if (!target.alive || !target.segments?.length) continue;
-      // Check vs head and all segments
       for (let s = 0; s < target.segments.length; s++) {
         const seg = target.segments[s];
         if (circlesOverlap(a.x, a.y, ARROW_RADIUS, seg.x, seg.y, s === 0 ? HEAD_RADIUS : SNAKE_RADIUS)) {
           if (target.isDestructor) {
             target.hp -= 10;
             if (target.hp <= 0 && target.alive) {
-              target.alive = false;
-              deaths.push({ id: target.id, killedBy: a.ownerId });
+              target.alive = false; deaths.push({ id: target.id, killedBy: a.ownerId });
               const shooter = players[a.ownerId];
-              if (shooter) {
-                shooter.score += 100;
-                shooter.length += 200;
-              }
-              destructorRespawnTimer = 30 * 30; // 30s
+              if (shooter) { shooter.score += 100; shooter.length += 200; }
+              destructorRespawnTimer = 30 * 30;
               for (let k = 0; k < target.segments.length; k += 2) {
                 const fid = foodId++;
                 foods[fid] = { id: fid, x: target.segments[k].x, y: target.segments[k].y, color: target.color, value: 5, life: rand(300, 900) };
                 deltaFood.push({ type: 'add', food: foods[fid] });
               }
             }
-            io.emit('arrowHit', JSON.stringify({ x: a.x, y: a.y, targetId: pid }));
-            delete arrows[aid];
-            arrowDelta.push({ type: 'remove', id: aid });
-            hit = true;
-            break;
+            // FIX #1: Sin JSON.stringify
+            io.emit('arrowHit', { x: a.x, y: a.y, targetId: pid });
           } else {
-            // Hit! — same ratio as all other damage: length -= dmg, score -= dmg*0.5
             const dmg = Math.min(ARROW_DAMAGE, target.length - 4);
-          if (dmg > 0) {
-            target.length = Math.max(4, target.length - dmg);
-            target.score  = Math.max(0, target.score  - dmg * 0.5);
-            // Drop food from removed tail segments
-            for (let k = 0; k < dmg * 2; k++) {
-              const idx = target.segments.length - 1 - k;
-              if (idx < 0) break;
-              const fid = foodId++;
-              foods[fid] = { id: fid, x: target.segments[idx].x, y: target.segments[idx].y, color: target.color, value: 1, life: rand(300, 900) };
-              deltaFood.push({ type: 'add', food: foods[fid] });
+            if (dmg > 0) {
+              target.length = Math.max(4, target.length - dmg);
+              target.score = Math.max(0, target.score - dmg * 0.5);
+              for (let k = 0; k < dmg * 2; k++) {
+                const idx = target.segments.length - 1 - k;
+                if (idx < 0) break;
+                const fid = foodId++;
+                foods[fid] = { id: fid, x: target.segments[idx].x, y: target.segments[idx].y, color: target.color, value: 1, life: rand(300, 900) };
+                deltaFood.push({ type: 'add', food: foods[fid] });
+              }
             }
+            io.emit('arrowHit', { x: a.x, y: a.y, targetId: pid });
           }
-          io.emit('arrowHit', JSON.stringify({ x: a.x, y: a.y, targetId: pid }));
-          delete arrows[aid];
-          arrowDelta.push({ type: 'remove', id: aid });
-          hit = true;
-          break;
-          }
+          delete arrows[aid]; arrowDelta.push({ type: 'remove', id: aid }); hit = true; break;
         }
       }
       if (hit) break;
@@ -1304,10 +1023,77 @@ function gameTick() {
     }
   }
 
-  // Explicit manual stringification for Tick to avoid binary frame issues in production
-  io.emit('tick', JSON.stringify({ ...tickPacket, arrowDelta }));
+  // ── Construir paquete base (sin datos por jugador) ────────────
+  const basePacket = {
+    foodChanges: deltaFood,
+    leaderboard,
+    fbDelta, fbHits,
+    mineDelta, mineHits,
+    shieldHits,
+    // FIX #2: larvas/slugs/worms/ants se incluyen en el paquete base.
+    // El culling por viewport se hace por-socket abajo.
+    larvas: Object.values(larvas),
+    slugs: Object.values(slugs),
+    worms: Object.values(worms).map(w => ({ id: w.id, head: w.segs[0], len: w.segs.length, angle: w.angle })),
+    ants: Object.values(ants),
+    arrowDelta
+  };
 
-  for (const d of deaths) io.to(d.id).emit('died', JSON.stringify({ killedBy: d.killedBy }));
+  if (staticChanged) {
+    basePacket.apples = Object.values(apples);
+    basePacket.greenApples = Object.values(greenApples);
+    basePacket.goldenApples = Object.values(goldenApples);
+    basePacket.portals = Object.values(portals);
+    basePacket.puddles = Object.values(puddles);
+    staticChanged = false;
+  }
+  if (rocksChanged) {
+    basePacket.rocks = Object.values(rocks);
+  }
+
+  // FIX #2: Viewport culling — enviar a cada socket solo los datos visibles
+  // FIX #1: Sin JSON.stringify — Socket.IO serializa nativo
+  for (const [sid, socket] of io.sockets.sockets) {
+    const p = players[sid];
+
+    // Si no hay jugador asociado al socket (aún no hizo join) mandamos paquete vacío
+    if (!p || !p.alive || !p.segments.length) {
+      socket.emit('tick', { ...basePacket, players: {} });
+      continue;
+    }
+
+    const px = p.segments[0].x;
+    const py = p.segments[0].y;
+
+    // Filtrar jugadores por viewport
+    const visiblePlayers = {};
+    for (const pid in deltaPlayers) {
+      const dp = deltaPlayers[pid];
+      // Siempre incluir al propio jugador
+      if (pid === sid) { visiblePlayers[pid] = dp; continue; }
+      // Para otros: usar la cabeza para determinar visibilidad
+      const hx = dp.head ? dp.head.x : (dp.segments ? dp.segments[0]?.x : null);
+      const hy = dp.head ? dp.head.y : (dp.segments ? dp.segments[0]?.y : null);
+      if (hx == null || !inViewport(px, py, hx, hy)) continue;
+      visiblePlayers[pid] = dp;
+    }
+
+    // FIX #2: Filtrar entidades por viewport
+    const packet = {
+      ...basePacket,
+      players: visiblePlayers,
+      // Filtrar larvas/slugs/worms/ants cercanas
+      larvas: basePacket.larvas.filter(e => inViewport(px, py, e.x, e.y)),
+      slugs: basePacket.slugs.filter(e => inViewport(px, py, e.x, e.y)),
+      worms: basePacket.worms.filter(e => e.head && inViewport(px, py, e.head.x, e.head.y)),
+      ants: basePacket.ants.filter(e => inViewport(px, py, e.x, e.y)),
+    };
+
+    socket.emit('tick', packet);
+  }
+
+  // Notificar muertes individualmente (sin culling — son mensajes críticos)
+  for (const d of deaths) io.to(d.id).emit('died', { killedBy: d.killedBy });
 }
 
 // ── Socket.IO ────────────────────────────────────────────────────
@@ -1317,34 +1103,29 @@ io.on('connection', socket => {
   socket.on('join', raw => {
     const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
     const { name, color, pattern } = data || {};
-    // Deep sanitize name
     const sanitizedName = Array.from(String(name || 'Snake'))
-      .filter(char => char.codePointAt(0) > 31) // No control chars
-      .slice(0, 15)
-      .join('');
+      .filter(char => char.codePointAt(0) > 31)
+      .slice(0, 15).join('');
 
     const player = createPlayer(socket.id, sanitizedName, color, pattern);
     players[socket.id] = player;
 
-    // OPTIMIZATION: Send only the 200 closest foods to the spawn point
-    // This dramatically reduces the INIT packet size and prevents UTF-8 decode issues.
+    // Enviar solo las 200 comidas más cercanas al spawn (reduce tamaño del init)
     const foodList = Object.values(foods)
-      .map(f => ({ id: f.id, x: f.x, y: f.y, v: f.value, d: (f.x - player.segments[0].x)**2 + (f.y - player.segments[0].y)**2 }))
-      .sort((a, b) => a.d - b.d)
-      .slice(0, 200)
-      .map(f => [f.id, f.x, f.y, f.v]); // Compact array format [id, x, y, value]
+      .map(f => ({ id: f.id, x: f.x, y: f.y, v: f.value, d: (f.x - player.segments[0].x) ** 2 + (f.y - player.segments[0].y) ** 2 }))
+      .sort((a, b) => a.d - b.d).slice(0, 200)
+      .map(f => [f.id, f.x, f.y, f.v]);
 
-    // Explicit manual stringification for Init
-    socket.emit('init', JSON.stringify({
+    // FIX #1: Sin JSON.stringify — Socket.IO serializa automáticamente
+    socket.emit('init', {
       id: socket.id,
-      foods: foodList, // Compact and subset
+      foods: foodList,
       players: Object.values(players).map(p => ({
-        id: p.id, name: p.name, color: p.color, pattern: p.pattern, 
-        segments: p.id === socket.id ? p.segments : [p.segments[0]], 
+        id: p.id, name: p.name, color: p.color, pattern: p.pattern,
+        segments: p.id === socket.id ? p.segments : [p.segments[0]],
         score: Math.floor(p.score), alive: p.alive, isNpc: p.isNpc
       })),
-      worldWidth: WORLD_WIDTH,
-      worldHeight: WORLD_HEIGHT,
+      worldWidth: WORLD_WIDTH, worldHeight: WORLD_HEIGHT,
       apples: Object.values(apples),
       greenApples: Object.values(greenApples),
       goldenApples: Object.values(goldenApples),
@@ -1356,10 +1137,11 @@ io.on('connection', socket => {
       ants: Object.values(ants),
       rocks: Object.values(rocks),
       arrows: Object.values(arrows)
-    }));
-    
+    });
+
     console.log(`🚀 Init sent to ${socket.id} (${foodList.length} foods)`);
-    io.emit('playerJoined', JSON.stringify({ id: socket.id, name: player.name }));
+    // FIX #1: Sin JSON.stringify
+    io.emit('playerJoined', { id: socket.id, name: player.name });
   });
 
   socket.on('input', raw => {
@@ -1375,30 +1157,21 @@ io.on('connection', socket => {
     const p = players[socket.id];
     if (!p || !p.alive) return;
     if (p.ammo <= 0 && !(p.invisible > 0)) return;
-    
     if (!(p.invisible > 0)) p.ammo--;
     const head = p.segments[0];
     const fbid = fireballId++;
     fireballs[fbid] = {
-      id: fbid,
-      ownerId: socket.id,
-      color: p.color,
+      id: fbid, ownerId: socket.id, color: p.color,
       x: head.x + Math.cos(p.angle) * (HEAD_RADIUS + FIREBALL_RADIUS + 2),
       y: head.y + Math.sin(p.angle) * (HEAD_RADIUS + FIREBALL_RADIUS + 2),
-      angle: p.angle,
-      life: FIREBALL_LIFETIME
+      angle: p.angle, life: FIREBALL_LIFETIME
     };
-    // Broadcast new fireball to all
-    io.emit('fireballSpawned', JSON.stringify(fireballs[fbid]));
+    io.emit('fireballSpawned', fireballs[fbid]);
   });
 
   socket.on('mine', () => {
-    // Limits handled inside placeMine()
     const mine = placeMine(socket.id);
-    if (mine) {
-      // Broadcast new mine to all
-      io.emit('mineSpawned', JSON.stringify(mine));
-    }
+    if (mine) io.emit('mineSpawned', mine);
   });
 
   socket.on('arrow', () => {
@@ -1406,40 +1179,26 @@ io.on('connection', socket => {
     if (!p || !p.alive) return;
     const isGolden = p.invisible > 0;
     if (!isGolden && (p.score < 50 || p.arrowAmmo <= 0)) return;
-    
     if (!isGolden) {
       p.arrowAmmo--;
       p.score = Math.max(0, p.score - ARROW_COST);
-      // Update length based on score -> length -= ARROW_COST * 2
       p.length = Math.max(4, p.length - ARROW_COST * 2);
     }
-    
-    // Drop food to reimburse the length that was burnt as fuel for the arrow
     if (!isGolden) {
       for (let k = 0; k < ARROW_COST * 2; k += 2) {
         if (p.segments.length > 4) {
-          const idx = p.segments.length - 1; 
-          const tail = p.segments[idx];
+          const tail = p.segments.pop();
           if (!tail) break;
-          p.segments.pop(); // Remove segment visually to make food drop immediate
           const fid = foodId++;
           foods[fid] = { id: fid, x: tail.x, y: tail.y, color: p.color, value: 1, life: rand(300, 900) };
           pendingFood.push({ type: 'add', food: foods[fid] });
         }
       }
     }
-    
     const head = p.segments[0];
     const aid = arrowId++;
-    arrows[aid] = {
-      id: aid,
-      ownerId: socket.id,
-      x: head.x + Math.cos(p.angle) * 20,
-      y: head.y + Math.sin(p.angle) * 20,
-      angle: p.angle,
-      life: ARROW_LIFETIME
-    };
-    io.emit('arrowSpawned', JSON.stringify(arrows[aid]));
+    arrows[aid] = { id: aid, ownerId: socket.id, x: head.x + Math.cos(p.angle) * 20, y: head.y + Math.sin(p.angle) * 20, angle: p.angle, life: ARROW_LIFETIME };
+    io.emit('arrowSpawned', arrows[aid]);
   });
 
   socket.on('respawn', raw => {
@@ -1448,23 +1207,48 @@ io.on('connection', socket => {
     const p = players[socket.id];
     if (!p) return;
     players[socket.id] = createPlayer(socket.id, p.name, color || p.color, pattern || p.pattern);
-    socket.emit('respawned', JSON.stringify({ player: players[socket.id] }));
+    socket.emit('respawned', { player: players[socket.id] });
   });
 
   socket.on('disconnect', () => {
     console.log('disconnect', socket.id);
     delete players[socket.id];
-    io.emit('playerLeft', JSON.stringify({ id: socket.id }));
+    io.emit('playerLeft', { id: socket.id });
   });
 });
 
+// ── FIX #5: Loop de tiempo real con hrtime (sin drift acumulativo) ──
+// Reemplaza setInterval con un loop de alta precisión basado en hrtime.
+// Esto evita que los ticks se atrasen y se amontonen bajo carga del servidor.
+function scheduleNextTick() {
+  const now = process.hrtime.bigint();
+  const elapsed = now - lastTickTime;
+  tickAccumulator += elapsed;
+  lastTickTime = now;
+
+  if (tickAccumulator >= TARGET_TICK_NS) {
+    tickAccumulator -= TARGET_TICK_NS;
+    // Limitar accumulator para evitar "spiral of death" si el servidor se atrasa mucho
+    if (tickAccumulator > TARGET_TICK_NS * 3n) tickAccumulator = 0n;
+    gameTick();
+  }
+
+  // Calcular cuánto tiempo falta para el próximo tick y usar setImmediate/setTimeout
+  const remaining = Number(TARGET_TICK_NS - tickAccumulator) / 1e6; // a ms
+  if (remaining > 2) {
+    setTimeout(scheduleNextTick, Math.floor(remaining - 1));
+  } else {
+    setImmediate(scheduleNextTick);
+  }
+}
+
 // ── Boot ─────────────────────────────────────────────────────────
-  initFood();
-  initAnts();
-  initRocks();
-  spawnNpc();
-  spawnDestructor();
-  setInterval(gameTick, 1000 / 30);
+initFood();
+initAnts();
+initRocks();
+spawnNpc();
+spawnDestructor();
+scheduleNextTick(); // FIX #5: Loop de tiempo real en vez de setInterval
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`🐍 Slither server → http://localhost:${PORT}`));
