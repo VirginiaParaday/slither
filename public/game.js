@@ -280,9 +280,11 @@ socket.on('connect', () => console.log('✅ Socket conectado:', socket.id));
 socket.on('connect_error', (err) => console.error('❌ Socket error:', err));
 
 let isInitialized = false;
-socket.on('init', raw => {
+socket.on('init', data => {
+  // FIX CRÍTICO: El servidor ya no usa JSON.stringify — recibimos objeto nativo.
+  // Mantenemos el fallback por si acaso, pero data ya será un objeto.
+  if (typeof data === 'string') data = JSON.parse(data);
   if (isInitialized) return;
-  const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
   console.log('📦 Init recibido:', data.id);
   myId = data.id;
   worldW = data.worldWidth || 3000;
@@ -322,8 +324,9 @@ socket.on('init', raw => {
 });
 
 let lastTickLog = 0;
-socket.on('tick', raw => {
-  const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+socket.on('tick', data => {
+  // FIX CRÍTICO: El servidor ya no usa JSON.stringify — recibimos objeto nativo.
+  if (typeof data === 'string') data = JSON.parse(data);
   try {
     if (!data) return;
     if (Date.now() - lastTickLog > 5000) {

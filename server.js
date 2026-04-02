@@ -17,7 +17,9 @@ const io = new Server(server, {
 });
 
 // Middleware
-app.use(compression());
+// FIX CRÍTICO: compression() ELIMINADO — en Railway comprime los frames WebSocket
+// y el proxy los corrompe causando el error "Could not decode a text frame as UTF-8".
+// Solo comprimimos rutas HTTP estáticas explícitamente si es necesario.
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Constants ────────────────────────────────────────────────────
@@ -156,10 +158,8 @@ let arrowId = 0;
 const arrows = {};
 const pendingFood = [];
 
-// FIX #5: Variables para el loop de tiempo real con hrtime
-let lastTickTime = process.hrtime.bigint();
-let tickAccumulator = 0n;
-const TARGET_TICK_NS = BigInt(Math.round(TARGET_TICK_MS * 1e6)); // nanosegundos
+// FIX CRÍTICO: Variables hrtime eliminadas — ya no se usa el loop de alta precisión
+// que bloqueaba el event loop en Railway. Se usa setInterval estándar.
 
 // ── Helpers ──────────────────────────────────────────────────────
 const rand = (min, max) => Math.random() * (max - min) + min;
@@ -1095,8 +1095,10 @@ function gameTick() {
       ants: basePacket.ants.filter(e => inViewport(px, py, e.x, e.y)),
     };
 
-    // FIX: Usamos stringify para forzar un solo frame de texto (evita fallos de proxy en Railway)
-    socket.emit('tick', JSON.stringify(packet));
+    // FIX CRÍTICO: Sin JSON.stringify — Socket.IO serializa nativo automáticamente.
+    // Antes se mandaba tick como string y otros eventos como objeto, causando
+    // inconsistencia que rompía el parseo en el cliente.
+    socket.emit('tick', packet);
   }
 
   // Notificar muertes individualmente (sin culling — son mensajes críticos)
@@ -1108,6 +1110,7 @@ io.on('connection', socket => {
   console.log('connect', socket.id);
 
   socket.on('join', raw => {
+    // FIX CRÍTICO: Mantener fallback por compatibilidad pero ya llega como objeto nativo
     const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
     const { name, color, pattern } = data || {};
     const sanitizedName = Array.from(String(name || 'Snake'))
@@ -1123,8 +1126,8 @@ io.on('connection', socket => {
       .sort((a, b) => a.d - b.d).slice(0, 200)
       .map(f => [f.id, f.x, f.y, f.v]);
 
-    // FIX: Usamos stringify para forzar un solo frame de texto
-    socket.emit('init', JSON.stringify({
+    // FIX CRÍTICO: Sin JSON.stringify — consistencia con todos los demás eventos
+    socket.emit('init', {
       id: socket.id,
       foods: foodList,
       players: Object.values(players).map(p => ({
@@ -1144,14 +1147,15 @@ io.on('connection', socket => {
       ants: Object.values(ants),
       rocks: Object.values(rocks),
       arrows: Object.values(arrows)
-    }));
+    });
 
     console.log(`🚀 Init sent to ${socket.id} (${foodList.length} foods)`);
     io.emit('playerJoined', { id: socket.id, name: player.name });
   });
 
-  socket.on('input', raw => {
-    const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  socket.on('input', data => {
+    // FIX CRÍTICO: Sin JSON.stringify en cliente ni en servidor — objeto nativo
+    if (typeof data === 'string') data = JSON.parse(data);
     const { angle, boosting } = data || {};
     const p = players[socket.id];
     if (!p || !p.alive) return;
@@ -1223,38 +1227,16 @@ io.on('connection', socket => {
   });
 });
 
-// ── FIX #5: Loop de tiempo real con hrtime (sin drift acumulativo) ──
-// Reemplaza setInterval con un loop de alta precisión basado en hrtime.
-// Esto evita que los ticks se atrasen y se amontonen bajo carga del servidor.
-function scheduleNextTick() {
-  const now = process.hrtime.bigint();
-  const elapsed = now - lastTickTime;
-  tickAccumulator += elapsed;
-  lastTickTime = now;
-
-  if (tickAccumulator >= TARGET_TICK_NS) {
-    tickAccumulator -= TARGET_TICK_NS;
-    // Limitar accumulator para evitar "spiral of death" si el servidor se atrasa mucho
-    if (tickAccumulator > TARGET_TICK_NS * 3n) tickAccumulator = 0n;
-    gameTick();
-  }
-
-  // Calcular cuánto tiempo falta para el próximo tick y usar setImmediate/setTimeout
-  const remaining = Number(TARGET_TICK_NS - tickAccumulator) / 1e6; // a ms
-  if (remaining > 2) {
-    setTimeout(scheduleNextTick, Math.floor(remaining - 1));
-  } else {
-    setImmediate(scheduleNextTick);
-  }
-}
-
 // ── Boot ─────────────────────────────────────────────────────────
+// FIX CRÍTICO: scheduleNextTick con setImmediate en loop continuo bloqueaba
+// el event loop de Node.js en Railway, impidiendo que Socket.IO procesara
+// mensajes entrantes. Volvemos a setInterval simple y estable.
 initFood();
 initAnts();
 initRocks();
 spawnNpc();
 spawnDestructor();
-scheduleNextTick(); // FIX #5: Loop de tiempo real en vez de setInterval
+setInterval(gameTick, 1000 / 30);
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`🐍 Slither server → http://localhost:${PORT}`));
