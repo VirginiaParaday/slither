@@ -141,6 +141,8 @@ const rocks = {};
 let rockRelocateTimer = 0;
 let staticChanged = true; // Force first update
 const BOSS_ID = 'boss_devorador';
+const BOSS_DESTRUCTOR_ID = 'boss_destructor';
+let destructorRespawnTimer = 0;
 let arrowId = 0;
 const arrows = {};
 const pendingFood = [];
@@ -330,6 +332,20 @@ function spawnNpc() {
   npc.score = 0;
 }
 
+function spawnDestructor() {
+  players[BOSS_DESTRUCTOR_ID] = createPlayer(BOSS_DESTRUCTOR_ID, 'El Destructor', '#3b0066', 'stripe');
+  const npc = players[BOSS_DESTRUCTOR_ID];
+  npc.isNpc = true;
+  npc.isDestructor = true;
+  npc.length = 15;
+  npc.score = 15;
+  npc.hp = 100;
+  npc.maxHp = 100;
+  npc.maxMines = 100;
+  npc._fireCooldown = 60;
+  npc._mineCooldown = 90;
+}
+
 
 function placeMine(playerId) {
   const p = players[playerId];
@@ -355,6 +371,11 @@ function circlesOverlap(ax, ay, ar, bx, by, br) {
 
 // ── Game tick ────────────────────────────────────────────────────
 function gameTick() {
+  if (destructorRespawnTimer > 0) {
+    destructorRespawnTimer--;
+    if (destructorRespawnTimer <= 0) spawnDestructor();
+  }
+
   const deltaPlayers = {};
   const deltaFood = [...pendingFood];
   pendingFood.length = 0;
@@ -629,6 +650,35 @@ function gameTick() {
       }
     }
 
+    if (p.isDestructor) {
+      // Random wandering
+      if (Math.random() < 0.02) p.targetAngle = p.angle + rand(-Math.PI/2, Math.PI/2);
+      
+      // Fireball attack
+      p._fireCooldown--;
+      if (p._fireCooldown <= 0) {
+        p._fireCooldown = rand(90, 150); // 3-5 seconds
+        const head = p.segments[0];
+        const fbid = fireballId++;
+        fireballs[fbid] = {
+          id: fbid, ownerId: p.id, color: p.color,
+          x: head.x + Math.cos(p.angle) * (HEAD_RADIUS + FIREBALL_RADIUS + 2),
+          y: head.y + Math.sin(p.angle) * (HEAD_RADIUS + FIREBALL_RADIUS + 2),
+          angle: p.angle, life: FIREBALL_LIFETIME
+        };
+        // Use pendingFood or emit directly? No, fireballs have no deltaFood array. They emit directly!
+        io.emit('fireballSpawned', JSON.stringify(fireballs[fbid]));
+      }
+
+      // Mine drop attack
+      p._mineCooldown--;
+      if (p._mineCooldown <= 0) {
+        p._mineCooldown = rand(150, 240); // 5-8 seconds
+        const mine = placeMine(p.id);
+        if (mine) io.emit('mineSpawned', JSON.stringify(mine));
+      }
+    }
+
     p.segments.unshift({ x: nx, y: ny });
     while (p.segments.length > p.length) p.segments.pop();
 
@@ -698,6 +748,9 @@ function gameTick() {
       protected: (p.protection > 0),
       lethal: (p.lethal > 0),
       isNpc: p.isNpc,
+      isDestructor: p.isDestructor,
+      hp: p.hp,
+      maxHp: p.maxHp,
       slow: (p.slow > 0),
       len: p.segments.length,
       arrowAmmo: p.arrowAmmo
@@ -885,7 +938,29 @@ function gameTick() {
       for (let s = 0; s < target.segments.length; s++) {
         const seg = target.segments[s];
         if (circlesOverlap(fb.x, fb.y, FIREBALL_RADIUS, seg.x, seg.y, SNAKE_RADIUS + 2)) {
-          if (target.protection > 0) {
+          if (target.isDestructor) {
+            target.hp -= 5;
+            if (target.hp <= 0 && target.alive) {
+              target.alive = false;
+              deaths.push({ id: target.id, killedBy: fb.ownerId });
+              const shooter = players[fb.ownerId];
+              if (shooter) {
+                shooter.score += 100;
+                shooter.length += 200;
+              }
+              destructorRespawnTimer = 30 * 30; // 30s at 30fps
+              for (let k = 0; k < target.segments.length; k += 2) {
+                const fid = foodId++;
+                foods[fid] = { id: fid, x: target.segments[k].x, y: target.segments[k].y, color: target.color, value: 5, life: rand(300, 900) };
+                deltaFood.push({ type: 'add', food: foods[fid] });
+              }
+            }
+            fbHits.push({ fbId: fbid, targetId: pid, x: fb.x, y: fb.y });
+            delete fireballs[fbid];
+            fbDelta.push({ type: 'remove', id: fbid });
+            hit = true;
+            break;
+          } else if (target.protection > 0) {
             shieldHits.push({ x: fb.x, y: fb.y });
           } else {
             // Hit! shrink target
@@ -1129,8 +1204,31 @@ function gameTick() {
       for (let s = 0; s < target.segments.length; s++) {
         const seg = target.segments[s];
         if (circlesOverlap(a.x, a.y, ARROW_RADIUS, seg.x, seg.y, s === 0 ? HEAD_RADIUS : SNAKE_RADIUS)) {
-          // Hit! — same ratio as all other damage: length -= dmg, score -= dmg*0.5
-          const dmg = Math.min(ARROW_DAMAGE, target.length - 4);
+          if (target.isDestructor) {
+            target.hp -= 10;
+            if (target.hp <= 0 && target.alive) {
+              target.alive = false;
+              deaths.push({ id: target.id, killedBy: a.ownerId });
+              const shooter = players[a.ownerId];
+              if (shooter) {
+                shooter.score += 100;
+                shooter.length += 200;
+              }
+              destructorRespawnTimer = 30 * 30; // 30s
+              for (let k = 0; k < target.segments.length; k += 2) {
+                const fid = foodId++;
+                foods[fid] = { id: fid, x: target.segments[k].x, y: target.segments[k].y, color: target.color, value: 5, life: rand(300, 900) };
+                deltaFood.push({ type: 'add', food: foods[fid] });
+              }
+            }
+            io.emit('arrowHit', JSON.stringify({ x: a.x, y: a.y, targetId: pid }));
+            delete arrows[aid];
+            arrowDelta.push({ type: 'remove', id: aid });
+            hit = true;
+            break;
+          } else {
+            // Hit! — same ratio as all other damage: length -= dmg, score -= dmg*0.5
+            const dmg = Math.min(ARROW_DAMAGE, target.length - 4);
           if (dmg > 0) {
             target.length = Math.max(4, target.length - dmg);
             target.score  = Math.max(0, target.score  - dmg * 0.5);
@@ -1148,6 +1246,7 @@ function gameTick() {
           arrowDelta.push({ type: 'remove', id: aid });
           hit = true;
           break;
+          }
         }
       }
       if (hit) break;
@@ -1307,6 +1406,8 @@ io.on('connection', socket => {
   initFood();
   initAnts();
   initRocks();
+  spawnNpc();
+  spawnDestructor();
   setInterval(gameTick, 1000 / 30);
 
 const PORT = process.env.PORT || 3000;

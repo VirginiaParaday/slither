@@ -1179,7 +1179,18 @@ function drawSnake(p) {
   for (let i=total-1; i>=1; i--) {
     if (!isVisible(segs[i].x,segs[i].y,30)) continue;
     const {x,y}=worldToScreen(segs[i].x,segs[i].y);
-    if (p.isNpc) {
+    if (p.isDestructor) {
+      ctx.save();
+      ctx.fillStyle = (Math.floor(i/2) % 2 === 0) ? '#3b0066' : '#1a0033';
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = 'rgba(255,100,0,0.7)';
+      ctx.beginPath(); ctx.arc(x,y,16,0,Math.PI*2); ctx.fill();
+      // Side spikes
+      ctx.fillStyle = '#ff6b00';
+      ctx.beginPath(); ctx.moveTo(x, y-10); ctx.lineTo(x-10, y-20); ctx.lineTo(x-5, y-8); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x, y+10); ctx.lineTo(x-10, y+20); ctx.lineTo(x-5, y+8); ctx.fill();
+      ctx.restore();
+    } else if (p.isNpc) {
       ctx.save();
       // alternating cyan/blue colors
       ctx.fillStyle = (Math.floor(i/3) % 2 === 0) ? '#48dbfb' : '#0abde3';
@@ -1201,7 +1212,26 @@ function drawSnake(p) {
   const head=segs[0];
   if (isVisible(head.x,head.y)) {
     const {x:hx,y:hy}=worldToScreen(head.x,head.y);
-    if (p.isNpc) {
+    if (p.isDestructor) {
+      const ea = Math.atan2(segs[0].y-segs[1].y, segs[0].x-segs[1].x);
+      ctx.save();
+      ctx.translate(hx, hy);
+      ctx.rotate(ea);
+      // Dark purple body
+      ctx.shadowBlur = 15; ctx.shadowColor = '#ff6b00';
+      ctx.fillStyle = '#3b0066';
+      ctx.beginPath(); ctx.arc(0, 0, 18, 0, Math.PI*2); ctx.fill();
+      ctx.shadowBlur = 0;
+      // Front armor
+      ctx.fillStyle = '#1a0033';
+      ctx.beginPath(); ctx.arc(5, 0, 14, -Math.PI/2, Math.PI/2); ctx.fill();
+      // Giant glowing eye
+      ctx.fillStyle = '#ff0000';
+      ctx.beginPath(); ctx.arc(10, 0, 6, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#ffeb3b';
+      ctx.beginPath(); ctx.arc(11, 0, 2.5, 0, Math.PI*2); ctx.fill();
+      ctx.restore();
+    } else if (p.isNpc) {
       const ea = Math.atan2(segs[0].y-segs[1].y, segs[0].x-segs[1].x);
       ctx.save();
       ctx.translate(hx, hy);
@@ -1283,8 +1313,24 @@ function drawSnake(p) {
     ctx.fillStyle=isMe?'#3fb950':'#e6edf3';
     ctx.textAlign='center';
     ctx.shadowBlur=4; ctx.shadowColor='#00000090';
-    ctx.fillText(p.name,hx,hy+(p.isNpc ? 28 : 24));
+    const nameY = hy + (p.isNpc ? 28 : 24);
+    ctx.fillText(p.name, hx, nameY);
     ctx.shadowBlur=0;
+    
+    // Draw Health bar if HP exists
+    if (typeof p.hp === 'number' && typeof p.maxHp === 'number') {
+      const barW = 40;
+      const barH = 6;
+      const barY = nameY + 8;
+      const pct = Math.max(0, p.hp / p.maxHp);
+      
+      ctx.fillStyle = '#000';
+      ctx.fillRect(hx - barW/2 - 1, barY - 1, barW + 2, barH + 2);
+      ctx.fillStyle = '#ff0000';
+      ctx.fillRect(hx - barW/2, barY, barW, barH);
+      ctx.fillStyle = '#00ff00';
+      ctx.fillRect(hx - barW/2, barY, barW * pct, barH);
+    }
   }
   ctx.restore();
 }
